@@ -1,166 +1,110 @@
 // src/components/map/controls/LayerControl.tsx
 import React from 'react';
-import {
-    Box,
-    List,
-    ListItem,
-    ListItemText,
-    ListItemIcon,
-    Switch,
-    Collapse,
-    Typography,
-    IconButton,
-    Paper,
-    Divider
-} from '@mui/material';
-import ExpandLess from '@mui/icons-material/ExpandLess';
-import ExpandMore from '@mui/icons-material/ExpandMore';
-import LayersIcon from '@mui/icons-material/Layers';
+import { Box, Paper, Typography, Divider } from '@mui/material';
 import { useMap } from '../../../context/MapContext';
 
 const LayerControl: React.FC = () => {
     const { projectData, visibleLayers, toggleLayer } = useMap();
 
-    // State for expanded groups
-    const [expandedGroups, setExpandedGroups] = React.useState<{ [key: number]: boolean }>(() => {
-        // Initialize with groups that should be expanded by default
-        const expanded: { [key: number]: boolean } = {};
-        if (projectData) {
-            projectData.layerGroups.forEach(group => {
-                expanded[group.id] = group.is_expanded !== false;
-            });
-        }
-        return expanded;
+    console.log('[LayerControl] Rendering with:', {
+        hasProjectData: !!projectData,
+        layerGroups: projectData?.layer_groups || projectData?.layerGroups || [],
+        visibleLayers: Array.from(visibleLayers)
     });
 
-    // State for control expansion
-    const [controlExpanded, setControlExpanded] = React.useState(true);
+    if (!projectData) {
+        console.warn('[LayerControl] No projectData available');
+        return (
+            <Paper sx={{ p: 2, width: 250 }}>
+                <Typography color="error">No project data available</Typography>
+            </Paper>
+        );
+    }
 
-    if (!projectData) return null;
+    // Try to safely access layer groups with fallbacks
+    const layerGroups = projectData.layer_groups || projectData.layerGroups || [];
 
-    // Toggle layer group expansion
-    const handleGroupToggle = (groupId: number) => {
-        setExpandedGroups(prev => ({
-            ...prev,
-            [groupId]: !prev[groupId]
-        }));
-    };
+    if (!Array.isArray(layerGroups)) {
+        console.warn('[LayerControl] layerGroups is not an array:', layerGroups);
+        return (
+            <Paper sx={{ p: 2, width: 250 }}>
+                <Typography color="error">Layer groups data is invalid</Typography>
+                <pre style={{ fontSize: '10px', maxHeight: '150px', overflow: 'auto' }}>
+          {JSON.stringify(projectData, null, 2)}
+        </pre>
+            </Paper>
+        );
+    }
 
-    // Toggle layer visibility
-    const handleLayerToggle = (layerId: number) => {
-        toggleLayer(layerId, !visibleLayers.has(layerId));
-    };
-
-    // Toggle the entire control
-    const toggleControlExpansion = () => {
-        setControlExpanded(prev => !prev);
-    };
+    if (layerGroups.length === 0) {
+        console.warn('[LayerControl] No layer groups found in project data');
+        return (
+            <Paper sx={{ p: 2, width: 250 }}>
+                <Typography>No layers available</Typography>
+            </Paper>
+        );
+    }
 
     return (
-        <Paper sx={{ maxWidth: 320, maxHeight: 'calc(100vh - 100px)', overflow: 'hidden' }}>
-            {/* Header */}
-            <Box
-                display="flex"
-                alignItems="center"
-                p={1}
-                px={2}
-                bgcolor="primary.main"
-                color="primary.contrastText"
-            >
-                <LayersIcon sx={{ mr: 1 }} />
-                <Typography variant="subtitle1" flexGrow={1}>
-                    Layers
-                </Typography>
-                <IconButton
-                    size="small"
-                    onClick={toggleControlExpansion}
-                    sx={{ color: 'inherit' }}
-                >
-                    {controlExpanded ? <ExpandLess /> : <ExpandMore />}
-                </IconButton>
-            </Box>
+        <Paper sx={{ p: 2, width: 250, maxHeight: '70vh', overflow: 'auto' }}>
+            <Typography variant="subtitle1" gutterBottom>Layers</Typography>
+            <Divider sx={{ mb: 1 }} />
 
-            <Collapse in={controlExpanded} timeout="auto">
-                <Box
-                    sx={{
-                        overflowY: 'auto',
-                        maxHeight: 'calc(100vh - 170px)'
-                    }}
-                >
-                    <List sx={{ width: '100%' }} component="nav" dense>
-                        {projectData.layerGroups.map((group) => (
-                            <React.Fragment key={group.id}>
-                                {/* Layer Group Item */}
-                                <ListItem
-                                    button
-                                    onClick={() => handleGroupToggle(group.id)}
-                                    sx={{ bgcolor: 'grey.100' }}
+            {layerGroups.map((group: any) => {
+                // Safely access layers with fallback
+                const layers = group.layers || [];
+
+                return (
+                    <Box key={group.id} sx={{ mb: 2 }}>
+                        <Typography variant="subtitle2" fontWeight="bold">
+                            {group.name || `Group ${group.id}`}
+                        </Typography>
+
+                        {Array.isArray(layers) && layers.length > 0 ? (
+                            layers.map((layer: any) => (
+                                <Box
+                                    key={layer.id}
+                                    sx={{
+                                        pl: 2,
+                                        py: 0.5,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        bgcolor: visibleLayers.has(layer.id) ? 'rgba(0, 0, 0, 0.08)' : 'transparent'
+                                    }}
                                 >
-                                    <ListItemText
-                                        primary={group.name}
-                                        primaryTypographyProps={{
-                                            variant: 'subtitle2',
-                                            fontWeight: 'medium'
+                                    <Typography variant="body2">
+                                        {layer.name || `Layer ${layer.id}`}
+                                    </Typography>
+                                    <Box
+                                        component="button"
+                                        sx={{
+                                            border: '1px solid #ccc',
+                                            borderRadius: '4px',
+                                            p: '2px 8px',
+                                            cursor: 'pointer',
+                                            bgcolor: visibleLayers.has(layer.id) ? 'primary.main' : 'white',
+                                            color: visibleLayers.has(layer.id) ? 'white' : 'text.primary',
                                         }}
-                                    />
-                                    {expandedGroups[group.id] ? <ExpandLess /> : <ExpandMore />}
-                                </ListItem>
+                                        onClick={() => toggleLayer(layer.id, !visibleLayers.has(layer.id))}
+                                    >
+                                        {visibleLayers.has(layer.id) ? 'Hide' : 'Show'}
+                                    </Box>
+                                </Box>
+                            ))
+                        ) : (
+                            <Typography variant="body2" color="text.secondary" sx={{ pl: 2 }}>
+                                No layers in this group
+                            </Typography>
+                        )}
+                    </Box>
+                );
+            })}
 
-                                {/* Layer Items */}
-                                <Collapse in={expandedGroups[group.id]} timeout="auto">
-                                    <List component="div" disablePadding dense>
-                                        {group.layers.map((layer) => (
-                                            <ListItem
-                                                key={layer.id}
-                                                sx={{
-                                                    pl: 4,
-                                                    '&:hover': {
-                                                        bgcolor: 'rgba(0, 0, 0, 0.04)'
-                                                    }
-                                                }}
-                                            >
-                                                <ListItemIcon sx={{ minWidth: 36 }}>
-                                                    <Box
-                                                        sx={{
-                                                            width: 16,
-                                                            height: 16,
-                                                            borderRadius: '50%',
-                                                            bgcolor: layer.style?.color || layer.style?.fillColor || '#808080',
-                                                            border: '1px solid',
-                                                            borderColor: layer.style?.color || '#000'
-                                                        }}
-                                                    />
-                                                </ListItemIcon>
-                                                <ListItemText
-                                                    primary={layer.name}
-                                                    primaryTypographyProps={{
-                                                        fontSize: '0.875rem',
-                                                        overflow: 'hidden',
-                                                        textOverflow: 'ellipsis',
-                                                        whiteSpace: 'nowrap'
-                                                    }}
-                                                />
-                                                <Switch
-                                                    edge="end"
-                                                    size="small"
-                                                    checked={visibleLayers.has(layer.id)}
-                                                    onChange={() => handleLayerToggle(layer.id)}
-                                                    sx={{
-                                                        '& .MuiSwitch-switchBase.Mui-checked': {
-                                                            color: 'primary.main'
-                                                        }
-                                                    }}
-                                                />
-                                            </ListItem>
-                                        ))}
-                                    </List>
-                                </Collapse>
-                                <Divider />
-                            </React.Fragment>
-                        ))}
-                    </List>
-                </Box>
-            </Collapse>
+            <Divider sx={{ mt: 2, mb: 1 }} />
+            <Typography variant="caption" color="text.secondary">
+                Debug: {visibleLayers.size} layers visible
+            </Typography>
         </Paper>
     );
 };

@@ -30,6 +30,7 @@ export interface LayerGroup {
     created_at: string;
     updated_at: string;
     project: number;
+    layers: Layer[];
 }
 
 /**
@@ -77,6 +78,10 @@ export interface Layer {
     created_at: string;
     updated_at: string;
     last_data_update: string | null;
+    functions?: Array<{
+        type: string;
+        arguments?: Record<string, any>;
+    }>;
 }
 
 /**

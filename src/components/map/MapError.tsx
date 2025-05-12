@@ -1,68 +1,49 @@
+// src/components/map/MapError.tsx
 import React from 'react';
-import {
-    Box,
-    Typography,
-    Paper,
-    Button
-} from '@mui/material';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import RefreshIcon from '@mui/icons-material/Refresh';
+import { Box, Paper, Typography, Button } from '@mui/material';
 
 interface MapErrorProps {
-    message?: string;
+    message: string;
     onRetry?: () => void;
 }
 
-const MapError: React.FC<MapErrorProps> = ({
-                                               message = 'An error occurred while loading the map',
-                                               onRetry
-                                           }) => {
-    const handleRetry = () => {
-        if (onRetry) {
-            onRetry();
-        } else {
-            window.location.reload();
-        }
-    };
+const MapError: React.FC<MapErrorProps> = ({ message, onRetry }) => {
+    console.log('[MapError] Rendering error:', message);
 
     return (
-        <Box
-            display="flex"
-            alignItems="center"
-            justifyContent="center"
-            height="100%"
-            width="100%"
-        >
+        <Box p={3} textAlign="center">
             <Paper
                 elevation={3}
                 sx={{
-                    p: 4,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 2,
-                    maxWidth: 400
+                    p: 3,
+                    maxWidth: 500,
+                    mx: 'auto',
+                    border: '1px solid #f44336'
                 }}
             >
-                <ErrorOutlineIcon color="error" sx={{ fontSize: 60 }} />
-
-                <Typography variant="h6" textAlign="center" color="error">
+                <Typography variant="h5" color="error" gutterBottom>
                     Map Error
                 </Typography>
 
-                <Typography variant="body1" textAlign="center" color="text.secondary">
-                    {message}
+                <Typography variant="body1" paragraph>
+                    {message || 'An error occurred while loading the map'}
                 </Typography>
 
-                <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<RefreshIcon />}
-                    onClick={handleRetry}
-                    sx={{ mt: 2 }}
-                >
-                    Try Again
-                </Button>
+                {onRetry && (
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={onRetry}
+                    >
+                        Retry
+                    </Button>
+                )}
+
+                <Box mt={2} p={2} bgcolor="#f5f5f5" borderRadius={1}>
+                    <Typography variant="caption" component="pre" sx={{ textAlign: 'left' }}>
+                        {`Error details: ${message}`}
+                    </Typography>
+                </Box>
             </Paper>
         </Box>
     );

@@ -68,6 +68,7 @@ import BasemapEditPage from './pages/components/BasemapEditPage';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
+import ApiInspectorPage from './pages/debug/ApiInspectorPage';
 
 
 function App() {
@@ -81,6 +82,7 @@ function App() {
                         <Route path="/login" element={<LoginPage />} />
                         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                         <Route path="/reset-password/:token/:uidb64" element={<ResetPasswordPage />} />
+                        <Route path="debug/api-inspector" element={<ProtectedRoute component={ApiInspectorPage} />} />
 
                         {/* Protected Routes */}
                         <Route path="/" element={<ProtectedRoute component={MainLayout} />}>
@@ -145,6 +147,8 @@ function App() {
                             <Route path="components/basemaps" element={<BasemapsPage />} />
                             <Route path="components/basemaps/create" element={<BasemapCreatePage />} />
                             <Route path="components/basemaps/:id/edit" element={<BasemapEditPage />} />
+
+                            <Route path="debug/api-inspector" element={<ApiInspectorPage />} />
                         </Route>
                     </Routes>
                 </Router>

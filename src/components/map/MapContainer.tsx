@@ -5,7 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import 'leaflet.markercluster';
-import { Project, LayerGroup, Basemap, Layer } from '../../types/map.types';
+import { Project, LayerGroup, Basemap, Layer } from '../../types';
 import MapLoadingOverlay from './MapLoadingOverlay';
 import LayerControl from './controls/LayerControl';
 import BasemapControl from './controls/BasemapControl';

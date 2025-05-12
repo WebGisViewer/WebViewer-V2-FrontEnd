@@ -20,6 +20,7 @@ export interface Basemap {
     created_at: string;
     updated_at: string;
     preview_image_base64?: string;
+    is_default: boolean;
 }
 
 /**

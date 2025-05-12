@@ -1,18 +1,12 @@
 // src/context/MapContext.tsx
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
-import L from 'leaflet';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+// Explicitly import Leaflet with the named import - this is critical
+import * as L from 'leaflet';
 import { projectService } from '../services';
-import { mapService } from '../services/mapService';
-import { Project, LayerGroup, Basemap, Layer } from '../types/map.types';
 
 // Define the context type
 interface MapContextType {
-    projectData: {
-        project: Project;
-        layerGroups: LayerGroup[];
-        basemaps: Basemap[];
-        tools: any[];
-    } | null;
+    projectData: any | null;
     map: L.Map | null;
     loading: boolean;
     error: string | null;
@@ -41,12 +35,7 @@ export const useMap = () => useContext(MapContext);
 
 export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     // State
-    const [projectData, setProjectData] = useState<{
-        project: Project;
-        layerGroups: LayerGroup[];
-        basemaps: Basemap[];
-        tools: any[];
-    } | null>(null);
+    const [projectData, setProjectData] = useState<any | null>(null);
     const [map, setMap] = useState<L.Map | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
@@ -56,38 +45,57 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Refs
     const mapRef = useRef<L.Map | null>(null);
     const layersRef = useRef<{ [id: number]: L.Layer }>({});
-    const clusterGroupsRef = useRef<{ [id: number]: L.MarkerClusterGroup }>({});
     const basemapLayersRef = useRef<{ [id: number]: L.TileLayer }>({});
 
     // Load project data
     const loadProject = useCallback(async (id: number) => {
+        console.log('[MapContext] loadProject called with id:', id);
         try {
             setLoading(true);
             setError(null);
 
-            // Fetch project data from the constructor endpoint
-            const data = await projectService.getProjectConstructor(Number(id));
-            setProjectData(data);
+            // Fetch project data from the API
+            console.log('[MapContext] Fetching project data...');
+            const data = await projectService.getProjectConstructor(id);
+            console.log('[MapContext] Project data received:', data);
+
+            // Make sure layer_groups is an array
+            if (!data.layer_groups) {
+                data.layer_groups = [];
+            }
 
             // Initialize visible layers
             const initialVisibleLayers = new Set<number>();
-            data.layerGroups.forEach(group => {
-                group.layers.forEach(layer => {
-                    if (layer.is_visible) {
-                        initialVisibleLayers.add(layer.id);
+
+            if (Array.isArray(data.layer_groups)) {
+                data.layer_groups.forEach((group: any) => {
+                    if (Array.isArray(group.layers)) {
+                        group.layers.forEach((layer: any) => {
+                            if (layer.is_visible_by_default) {
+                                initialVisibleLayers.add(layer.id);
+                            }
+                        });
                     }
                 });
-            });
+            }
+
+            console.log('[MapContext] Initial visible layers:', Array.from(initialVisibleLayers));
             setVisibleLayers(initialVisibleLayers);
 
-            // Set default basemap
-            const defaultBasemap = data.basemaps.find(b => b.is_default);
-            if (defaultBasemap) {
-                setCurrentBasemap(defaultBasemap.id);
+            // Find default basemap
+            if (Array.isArray(data.basemaps) && data.basemaps.length > 0) {
+                const defaultBasemap = data.basemaps.find((b: any) => b.is_default);
+                if (defaultBasemap) {
+                    setCurrentBasemap(defaultBasemap.id);
+                } else {
+                    setCurrentBasemap(data.basemaps[0].id);
+                }
             }
-        } catch (err) {
-            console.error('Error fetching project data:', err);
-            setError('Failed to load project data. Please try again later.');
+
+            setProjectData(data);
+        } catch (err: any) {
+            console.error('[MapContext] Error loading project:', err);
+            setError(`Failed to load project: ${err.message || 'Unknown error'}`);
         } finally {
             setLoading(false);
         }
@@ -95,329 +103,154 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Initialize Leaflet map
     const initializeMap = useCallback((container: HTMLElement) => {
-        if (!projectData || mapRef.current) return;
+        console.log('[MapContext] initializeMap called');
 
-        const { project } = projectData;
-
-        // Create Leaflet map
-        const center = project.default_center
-            ? [project.default_center.lat, project.default_center.lng]
-            : [39.8283, -98.5795]; // Fallback to USA center
-
-        const mapInstance = L.map(container, {
-            center: center as L.LatLngExpression,
-            zoom: project.default_zoom || 4,
-            minZoom: project.min_zoom || 1,
-            maxZoom: project.max_zoom || 18,
-            zoomControl: project.map_controls?.showZoomControl !== false,
-        });
-
-        // Add scale control if enabled
-        if (project.map_controls?.showScaleControl) {
-            L.control.scale().addTo(mapInstance);
+        if (!projectData) {
+            console.warn('[MapContext] Cannot initialize map: projectData is null');
+            return;
         }
 
-        // Initialize basemap layers
-        const basemapLayersObj: { [id: number]: L.TileLayer } = {};
+        try {
+            // Remove existing map if there is one
+            if (mapRef.current) {
+                console.log('[MapContext] Removing existing map');
+                mapRef.current.remove();
+            }
 
-        projectData.basemaps.forEach(basemap => {
+            console.log('[MapContext] Creating new map');
+
+            // Get center coordinates
+            const center = [
+                projectData.project?.default_center_lat || 40.7128,
+                projectData.project?.default_center_lng || -74.0060
+            ]; // Default to New York City
+
+            const zoom = projectData.project?.default_zoom_level || 10;
+
+            console.log('[MapContext] Map center:', center, 'zoom:', zoom);
+
+            // Create the map
+            const leafletMap = L.map(container, {
+                center: center as [number, number],
+                zoom: zoom,
+                zoomControl: true
+            });
+
+            // Add a default OSM tile layer initially
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(leafletMap);
+
+            // Store the map reference
+            mapRef.current = leafletMap;
+            setMap(leafletMap);
+
+            console.log('[MapContext] Map initialized successfully');
+
+            // Initialize basemap layers if available
+            if (Array.isArray(projectData.basemaps) && projectData.basemaps.length > 0) {
+                initializeBasemaps(leafletMap);
+            }
+
+        } catch (err: any) {
+            console.error('[MapContext] Error initializing map:', err);
+            setError(`Failed to initialize map: ${err.message || 'Unknown error'}`);
+        }
+    }, [projectData]);
+
+    // Initialize basemap layers
+    const initializeBasemaps = useCallback((leafletMap: L.Map) => {
+        if (!projectData || !Array.isArray(projectData.basemaps)) return;
+
+        console.log('[MapContext] Initializing basemaps');
+
+        // Create basemap layers
+        const basemapsObj: { [id: number]: L.TileLayer } = {};
+
+        projectData.basemaps.forEach((basemap: any) => {
             if (basemap.url_template) {
+                console.log('[MapContext] Creating basemap:', basemap.name);
+
                 const tileLayer = L.tileLayer(basemap.url_template, {
                     attribution: basemap.attribution || '',
-                    maxZoom: basemap.options?.maxZoom || 19,
-                    ...basemap.options
+                    maxZoom: basemap.max_zoom || 19,
+                    minZoom: basemap.min_zoom || 0
                 });
 
-                basemapLayersObj[basemap.id] = tileLayer;
+                basemapsObj[basemap.id] = tileLayer;
 
-                if (basemap.is_default) {
-                    tileLayer.addTo(mapInstance);
-                }
-            } else if (basemap.is_default) {
-                // Handle empty URL template (like white background)
-                const emptyLayer = L.tileLayer('', {
-                    attribution: basemap.attribution || ''
-                });
-                basemapLayersObj[basemap.id] = emptyLayer;
-                emptyLayer.addTo(mapInstance);
-
-                // Apply white background to map
-                container.classList.add('white-background');
-            }
-        });
-
-        basemapLayersRef.current = basemapLayersObj;
-        mapRef.current = mapInstance;
-        setMap(mapInstance);
-
-        // Load visible layers
-        visibleLayers.forEach(layerId => {
-            loadLayerData(layerId, mapInstance);
-        });
-
-    }, [projectData, visibleLayers]);
-
-    // Load layer data
-    const loadLayerData = async (layerId: number, mapInstance: L.Map) => {
-        if (!projectData || layersRef.current[layerId]) return;
-
-        try {
-            // Find layer in project data
-            const layer = projectData.layerGroups
-                .flatMap(group => group.layers)
-                .find(l => l.id === layerId);
-
-            if (!layer) return;
-
-            // Get layer bounds and zoom
-            const bounds = mapInstance.getBounds();
-            const zoom = mapInstance.getZoom();
-            const boundingBox = [
-                bounds.getWest(),
-                bounds.getSouth(),
-                bounds.getEast(),
-                bounds.getNorth()
-            ].join(',');
-
-            // Check if layer has clustering enabled
-            const clusterFunction = layer.functions?.find(fn => fn.type === 'clustering');
-
-            if (clusterFunction) {
-                await loadClusteredLayer(layer, clusterFunction, boundingBox, zoom, mapInstance);
-            } else {
-                await loadRegularLayer(layer, boundingBox, zoom, mapInstance);
-            }
-        } catch (error) {
-            console.error(`Error loading layer ${layerId}:`, error);
-        }
-    };
-
-    // Load clustered layer
-    const loadClusteredLayer = async (layer: Layer, clusterFunction: any, bounds: string, zoom: number, mapInstance: L.Map) => {
-        try {
-            // Create cluster group with custom options
-            let clusterGroup: L.MarkerClusterGroup;
-
-            if (clusterGroupsRef.current[layer.id]) {
-                clusterGroup = clusterGroupsRef.current[layer.id];
-            } else {
-                const clusterOptions: L.MarkerClusterGroupOptions = {
-                    maxClusterRadius: clusterFunction.arguments?.radius || 80,
-                    disableClusteringAtZoom: clusterFunction.arguments?.maxZoom || undefined
-                };
-
-                // If there's a custom icon create function, evaluate it
-                if (clusterFunction.arguments?.iconCreateFunction) {
-                    try {
-                        // This is potentially unsafe as it evaluates code from the server
-                        const iconCreateFn = new Function('return ' + clusterFunction.arguments.iconCreateFunction)();
-                        clusterOptions.iconCreateFunction = iconCreateFn;
-                    } catch (e) {
-                        console.error('Error evaluating custom cluster icon function:', e);
-                    }
-                }
-
-                clusterGroup = L.markerClusterGroup(clusterOptions);
-                clusterGroupsRef.current[layer.id] = clusterGroup;
-            }
-
-            // Fetch layer data
-            const { features } = await mapService.getLayerData(layer.id, 1, bounds, zoom);
-
-            // Process features based on layer type
-            const geoJsonLayer = L.geoJSON(features, {
-                style: (feature) => {
-                    // Apply style from layer
-                    return {
-                        color: layer.style?.color || '#3388ff',
-                        weight: layer.style?.weight || 3,
-                        opacity: layer.style?.opacity || 1,
-                        fillColor: layer.style?.fillColor || layer.style?.color || '#3388ff',
-                        fillOpacity: layer.style?.fillOpacity || 0.2,
-                        radius: layer.style?.radius || 6
-                    };
-                },
-                pointToLayer: (feature, latlng) => {
-                    // Create circle markers for points
-                    return L.circleMarker(latlng, {
-                        radius: layer.style?.radius || 6,
-                        fillColor: layer.style?.fillColor || '#3388ff',
-                        color: layer.style?.color || '#000',
-                        weight: layer.style?.weight || 1,
-                        opacity: layer.style?.opacity || 1,
-                        fillOpacity: layer.style?.fillOpacity || 0.8
+                // Add default basemap to map
+                if (basemap.id === currentBasemap) {
+                    // Remove OSM layer first
+                    leafletMap.eachLayer((layer) => {
+                        if (layer instanceof L.TileLayer) {
+                            leafletMap.removeLayer(layer);
+                        }
                     });
-                },
-                onEachFeature: (feature, leafletLayer) => {
-                    // Add popup if properties exist
-                    if (feature.properties) {
-                        const popupContent = createPopupContent(feature.properties);
-                        leafletLayer.bindPopup(popupContent);
-                    }
+
+                    tileLayer.addTo(leafletMap);
                 }
-            });
-
-            // Add features to cluster group and add to map
-            clusterGroup.addLayer(geoJsonLayer);
-            mapInstance.addLayer(clusterGroup);
-            layersRef.current[layer.id] = clusterGroup;
-
-        } catch (error) {
-            console.error(`Error loading clustered layer ${layer.name}:`, error);
-        }
-    };
-
-    // Load regular layer
-    const loadRegularLayer = async (layer: Layer, bounds: string, zoom: number, mapInstance: L.Map) => {
-        try {
-            // Fetch layer data
-            const { features } = await mapService.getLayerData(layer.id, 1, bounds, zoom);
-
-            // Process features based on layer type
-            const geoJsonLayer = L.geoJSON(features, {
-                style: (feature) => {
-                    // Apply style from layer
-                    return {
-                        color: layer.style?.color || '#3388ff',
-                        weight: layer.style?.weight || 3,
-                        opacity: layer.style?.opacity || 1,
-                        fillColor: layer.style?.fillColor || layer.style?.color || '#3388ff',
-                        fillOpacity: layer.style?.fillOpacity || 0.2,
-                        radius: layer.style?.radius || 6
-                    };
-                },
-                pointToLayer: (feature, latlng) => {
-                    // Create circle markers for points
-                    return L.circleMarker(latlng, {
-                        radius: layer.style?.radius || 6,
-                        fillColor: layer.style?.fillColor || '#3388ff',
-                        color: layer.style?.color || '#000',
-                        weight: layer.style?.weight || 1,
-                        opacity: layer.style?.opacity || 1,
-                        fillOpacity: layer.style?.fillOpacity || 0.8
-                    });
-                },
-                onEachFeature: (feature, leafletLayer) => {
-                    // Add popup if properties exist
-                    if (feature.properties) {
-                        const popupContent = createPopupContent(feature.properties);
-                        leafletLayer.bindPopup(popupContent);
-                    }
-                }
-            });
-
-            mapInstance.addLayer(geoJsonLayer);
-            layersRef.current[layer.id] = geoJsonLayer;
-
-        } catch (error) {
-            console.error(`Error loading layer ${layer.name}:`, error);
-        }
-    };
-
-    // Create basic popup content from feature properties
-    const createPopupContent = (properties: any): string => {
-        if (!properties) return 'No properties';
-
-        let content = '<div class="feature-popup">';
-
-        // Try to find a title property
-        const titleProps = ['name', 'title', 'id', 'label'];
-        let title = null;
-
-        for (const prop of titleProps) {
-            if (properties[prop]) {
-                title = properties[prop];
-                break;
             }
-        }
-
-        if (title) {
-            content += `<h4>${title}</h4>`;
-        }
-
-        // Add all properties
-        content += '<table>';
-        Object.entries(properties).forEach(([key, value]) => {
-            // Skip if it's the title we already displayed
-            if (title && titleProps.includes(key) && properties[key] === title) {
-                return;
-            }
-
-            // Format value if it's an object
-            let displayValue = value;
-            if (typeof value === 'object' && value !== null) {
-                displayValue = JSON.stringify(value);
-            }
-
-            content += `<tr><td><strong>${key}:</strong></td><td>${displayValue}</td></tr>`;
         });
-        content += '</table></div>';
 
-        return content;
-    };
+        basemapLayersRef.current = basemapsObj;
+
+    }, [projectData, currentBasemap]);
 
     // Toggle layer visibility
     const toggleLayer = useCallback((layerId: number, visible: boolean) => {
-        if (!mapRef.current) return;
+        console.log('[MapContext] toggleLayer:', layerId, visible);
 
-        if (visible) {
-            // Add to visible layers
-            setVisibleLayers(prev => {
-                const newSet = new Set(prev);
+        setVisibleLayers(prev => {
+            const newSet = new Set(prev);
+            if (visible) {
                 newSet.add(layerId);
-                return newSet;
-            });
-
-            // Load layer if not already loaded
-            if (!layersRef.current[layerId]) {
-                loadLayerData(layerId, mapRef.current);
             } else {
-                // Layer already loaded, just add it to map
-                mapRef.current.addLayer(layersRef.current[layerId]);
-            }
-        } else {
-            // Remove from visible layers
-            setVisibleLayers(prev => {
-                const newSet = new Set(prev);
                 newSet.delete(layerId);
-                return newSet;
-            });
-
-            // Remove layer from map
-            if (layersRef.current[layerId]) {
-                mapRef.current.removeLayer(layersRef.current[layerId]);
             }
-        }
+            return newSet;
+        });
+
+        // TODO: Actually add/remove the layer from the map
+        // This would be implemented with actual Leaflet operations
+
     }, []);
 
     // Change basemap
     const changeBasemap = useCallback((basemapId: number) => {
+        console.log('[MapContext] changeBasemap:', basemapId);
+
         if (!mapRef.current) return;
 
-        // Remove current basemap
-        if (currentBasemap !== null && basemapLayersRef.current[currentBasemap]) {
-            mapRef.current.removeLayer(basemapLayersRef.current[currentBasemap]);
-            mapRef.current.getContainer().classList.remove('white-background');
-        }
+        const map = mapRef.current;
+        const basemaps = basemapLayersRef.current;
 
-        // Add new basemap
-        const newBasemap = projectData?.basemaps.find(b => b.id === basemapId);
-        if (newBasemap) {
-            if (newBasemap.url_template && basemapLayersRef.current[basemapId]) {
-                mapRef.current.addLayer(basemapLayersRef.current[basemapId]);
-            } else {
-                // Handle empty URL template (white background)
-                mapRef.current.getContainer().classList.add('white-background');
+        // Remove current basemap layers
+        map.eachLayer((layer) => {
+            if (layer instanceof L.TileLayer) {
+                map.removeLayer(layer);
             }
+        });
 
-            setCurrentBasemap(basemapId);
+        // Add new basemap if it exists
+        if (basemaps[basemapId]) {
+            basemaps[basemapId].addTo(map);
+        } else {
+            // Add default OSM if selected basemap doesn't exist
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
         }
-    }, [currentBasemap, projectData]);
+
+        setCurrentBasemap(basemapId);
+
+    }, []);
 
     // Clean up on unmount
-    React.useEffect(() => {
+    useEffect(() => {
         return () => {
             if (mapRef.current) {
+                console.log('[MapContext] Cleaning up map on unmount');
                 mapRef.current.remove();
                 mapRef.current = null;
             }
