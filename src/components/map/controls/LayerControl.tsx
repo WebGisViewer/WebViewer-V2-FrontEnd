@@ -1,111 +1,117 @@
 // src/components/map/controls/LayerControl.tsx
+
 import React from 'react';
-import { Box, Paper, Typography, Divider } from '@mui/material';
+import {
+    Box,
+    Card,
+    CardContent,
+    Typography,
+    List,
+    ListItem,
+    ListItemIcon,
+    ListItemText,
+    Checkbox,
+    Collapse,
+    IconButton
+} from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import LayersIcon from '@mui/icons-material/Layers';
 import { useMap } from '../../../context/MapContext';
 
 const LayerControl: React.FC = () => {
-    const { projectData, visibleLayers, toggleLayer } = useMap();
+    const { projectData, layerVisibility, toggleLayerVisibility } = useMap();
+    const [expandedGroups, setExpandedGroups] = React.useState<Record<number, boolean>>({});
 
-    console.log('[LayerControl] Rendering with:', {
-        hasProjectData: !!projectData,
-        layerGroups: projectData?.layer_groups || projectData?.layerGroups || [],
-        visibleLayers: Array.from(visibleLayers)
-    });
-
-    if (!projectData) {
-        console.warn('[LayerControl] No projectData available');
-        return (
-            <Paper sx={{ p: 2, width: 250 }}>
-                <Typography color="error">No project data available</Typography>
-            </Paper>
-        );
+    // If no project data, don't render
+    if (!projectData || !projectData.layer_groups) {
+        return null;
     }
 
-    // Try to safely access layer groups with fallbacks
-    const layerGroups = projectData.layer_groups || projectData.layerGroups || [];
+    // Toggle layer group expansion
+    const toggleGroupExpansion = (groupId: number) => {
+        setExpandedGroups(prev => ({
+            ...prev,
+            [groupId]: !prev[groupId]
+        }));
+    };
 
-    if (!Array.isArray(layerGroups)) {
-        console.warn('[LayerControl] layerGroups is not an array:', layerGroups);
-        return (
-            <Paper sx={{ p: 2, width: 250 }}>
-                <Typography color="error">Layer groups data is invalid</Typography>
-                <pre style={{ fontSize: '10px', maxHeight: '150px', overflow: 'auto' }}>
-          {JSON.stringify(projectData, null, 2)}
-        </pre>
-            </Paper>
-        );
-    }
-
-    if (layerGroups.length === 0) {
-        console.warn('[LayerControl] No layer groups found in project data');
-        return (
-            <Paper sx={{ p: 2, width: 250 }}>
-                <Typography>No layers available</Typography>
-            </Paper>
-        );
-    }
+    // Initialize group expansion state if not already set
+    React.useEffect(() => {
+        const initialExpandedState: Record<number, boolean> = {};
+        projectData.layer_groups.forEach(group => {
+            initialExpandedState[group.id] = group.is_expanded_by_default;
+        });
+        setExpandedGroups(initialExpandedState);
+    }, [projectData.layer_groups]);
 
     return (
-        <Paper sx={{ p: 2, width: 250, maxHeight: '70vh', overflow: 'auto' }}>
-            <Typography variant="subtitle1" gutterBottom>Layers</Typography>
-            <Divider sx={{ mb: 1 }} />
+        <Card sx={{ minWidth: 250, maxWidth: 300, opacity: 0.9 }}>
+            <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
+                <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
+                    <LayersIcon sx={{ mr: 1 }} />
+                    Layers
+                </Typography>
 
-            {layerGroups.map((group: any) => {
-                // Safely access layers with fallback
-                const layers = group.layers || [];
-
-                return (
-                    <Box key={group.id} sx={{ mb: 2 }}>
-                        <Typography variant="subtitle2" fontWeight="bold">
-                            {group.name || `Group ${group.id}`}
-                        </Typography>
-
-                        {Array.isArray(layers) && layers.length > 0 ? (
-                            layers.map((layer: any) => (
-                                <Box
-                                    key={layer.id}
+                {projectData.layer_groups.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                        No layers available
+                    </Typography>
+                ) : (
+                    <List disablePadding dense>
+                        {projectData.layer_groups.map(group => (
+                            <React.Fragment key={group.id}>
+                                <ListItem
+                                    button
+                                    onClick={() => toggleGroupExpansion(group.id)}
                                     sx={{
-                                        pl: 2,
-                                        py: 0.5,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        bgcolor: visibleLayers.has(layer.id) ? 'rgba(0, 0, 0, 0.08)' : 'transparent'
+                                        bgcolor: 'background.paper',
+                                        borderRadius: 1,
+                                        mb: 0.5,
+                                        pl: 1
                                     }}
                                 >
-                                    <Typography variant="body2">
-                                        {layer.name || `Layer ${layer.id}`}
-                                    </Typography>
-                                    <Box
-                                        component="button"
-                                        sx={{
-                                            border: '1px solid #ccc',
-                                            borderRadius: '4px',
-                                            p: '2px 8px',
-                                            cursor: 'pointer',
-                                            bgcolor: visibleLayers.has(layer.id) ? 'primary.main' : 'white',
-                                            color: visibleLayers.has(layer.id) ? 'white' : 'text.primary',
-                                        }}
-                                        onClick={() => toggleLayer(layer.id, !visibleLayers.has(layer.id))}
-                                    >
-                                        {visibleLayers.has(layer.id) ? 'Hide' : 'Show'}
-                                    </Box>
-                                </Box>
-                            ))
-                        ) : (
-                            <Typography variant="body2" color="text.secondary" sx={{ pl: 2 }}>
-                                No layers in this group
-                            </Typography>
-                        )}
-                    </Box>
-                );
-            })}
+                                    <ListItemText
+                                        primary={group.name}
+                                        primaryTypographyProps={{ variant: 'body2', fontWeight: 'medium' }}
+                                    />
+                                    <IconButton edge="end" size="small">
+                                        {expandedGroups[group.id] ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                                    </IconButton>
+                                </ListItem>
 
-            <Divider sx={{ mt: 2, mb: 1 }} />
-            <Typography variant="caption" color="text.secondary">
-                Debug: {visibleLayers.size} layers visible
-            </Typography>
-        </Paper>
+                                <Collapse in={expandedGroups[group.id]} timeout="auto">
+                                    <List disablePadding dense>
+                                        {group.layers.map(layer => (
+                                            <ListItem
+                                                key={layer.id}
+                                                button
+                                                onClick={() => toggleLayerVisibility(layer.id)}
+                                                sx={{ pl: 3 }}
+                                            >
+                                                <ListItemIcon sx={{ minWidth: 36 }}>
+                                                    <Checkbox
+                                                        edge="start"
+                                                        checked={!!layerVisibility[layer.id]}
+                                                        tabIndex={-1}
+                                                        disableRipple
+                                                        size="small"
+                                                    />
+                                                </ListItemIcon>
+                                                <ListItemText
+                                                    primary={layer.name}
+                                                    primaryTypographyProps={{ variant: 'body2' }}
+                                                />
+                                            </ListItem>
+                                        ))}
+                                    </List>
+                                </Collapse>
+                            </React.Fragment>
+                        ))}
+                    </List>
+                )}
+            </CardContent>
+        </Card>
     );
 };
 

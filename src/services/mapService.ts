@@ -1,4 +1,5 @@
-// src/services/mapService.ts
+// src/services/mapService.ts - Properly configured to fetch layer data
+
 import { apiGet, apiPost, apiPut, apiDelete, createQueryParams } from './api';
 import {
     MapTool,
@@ -6,20 +7,25 @@ import {
     MapToolUpdate,
     ProjectTool,
     ProjectToolCreate,
-    ProjectToolBatchUpdate
+    ProjectToolBatchUpdate,
+    FeatureCollection,
+    LayerDataParams
 } from '../types';
-import { PaginatedResponse, FeatureCollection } from '../types';
-import { LayerDataParams } from '../types';
+import { PaginatedResponse } from '../types';
 
 /**
  * Get layer data by layer ID
+ * This is the critical function that needs to fetch from the correct API endpoint
  */
 export const getLayerData = (
     layerId: number,
     params: LayerDataParams = {}
 ): Promise<FeatureCollection> => {
     const queryParams = createQueryParams(params);
-    return apiGet<FeatureCollection>(`/data/${layerId}/?${queryParams.toString()}`);
+
+    // According to your API docs, the correct endpoint is /api/v1/data/{layer_id}/
+    // The base URL is already included by the apiGet function
+    return apiGet<FeatureCollection>(`/data/${layerId}/`, { params: queryParams });
 };
 
 /**
