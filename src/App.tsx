@@ -42,6 +42,9 @@ import AnalyticsPage from './pages/analytics/AnalyticsPage';
 import ProfilePage from './pages/profile/ProfilePage';
 import NotFoundPage from './pages/NotFoundPage';
 
+// Standalone Viewer
+import StandaloneViewerPage from './pages/viewer/StandaloneViewerPage';
+
 // Guards
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
@@ -83,6 +86,9 @@ function App() {
                         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                         <Route path="/reset-password/:token/:uidb64" element={<ResetPasswordPage />} />
                         <Route path="debug/api-inspector" element={<ProtectedRoute component={ApiInspectorPage} />} />
+
+                        {/* Standalone Viewer Route - No authentication required */}
+                        <Route path="/viewer/:id" element={<StandaloneViewerPage />} />
 
                         {/* Protected Routes */}
                         <Route path="/" element={<ProtectedRoute component={MainLayout} />}>
