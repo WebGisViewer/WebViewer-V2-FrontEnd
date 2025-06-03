@@ -13,38 +13,9 @@ const LoadingContainer = styled(Box)({
     flexDirection: 'column',
     justifyContent: 'center',
     alignItems: 'center',
-    height: '100vh',
+    height: 'calc(100vh - 48px)',
+    marginTop: '48px',
     backgroundColor: '#f5f5f5',
-});
-
-const HeaderBar = styled(Box)({
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '60px',
-    backgroundColor: '#4CAF50',
-    display: 'flex',
-    alignItems: 'center',
-    padding: '0 20px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-});
-
-const Title = styled(Typography)({
-    color: 'white',
-    fontSize: '20px',
-    fontWeight: 500,
-});
-
-const ContactSupport = styled(Typography)({
-    position: 'absolute',
-    right: '20px',
-    color: 'white',
-    fontSize: '14px',
-    cursor: 'pointer',
-    '&:hover': {
-        textDecoration: 'underline',
-    }
 });
 
 const LoadingContent = styled(Box)({
@@ -94,11 +65,6 @@ const LoadingText = styled(Typography)({
 const StandaloneLoadingScreen: React.FC<StandaloneLoadingScreenProps> = ({ progress, projectName }) => {
     return (
         <LoadingContainer>
-            <HeaderBar>
-                <Title>Wireless2020 WebGisViewer</Title>
-                <ContactSupport>Contact support</ContactSupport>
-            </HeaderBar>
-
             <LoadingContent>
                 <Spinner>
                     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

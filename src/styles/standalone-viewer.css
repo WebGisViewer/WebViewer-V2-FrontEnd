@@ -3,11 +3,20 @@
 /* Reset and base styles for standalone viewer */
 .standalone-viewer-container {
     width: 100vw;
-    height: 100vh;
+    height: calc(100vh - 48px);
     margin: 0;
     padding: 0;
     overflow: hidden;
     font-family: "Helvetica Neue", Arial, Helvetica, sans-serif;
+}
+
+/* Header styles */
+.standalone-header {
+    height: 48px;
+    background-color: #4CAF50;
+    color: white;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    z-index: 1100;
 }
 
 /* Leaflet control overrides to match Folium style */

@@ -9,6 +9,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import { projectService, mapService } from '../../services';
 import StandaloneLayerControl from '../../components/viewer/StandaloneLayerControl';
 import StandaloneLoadingScreen from '../../components/viewer/StandaloneLoadingScreen';
+import StandaloneHeader from '../../components/viewer/StandaloneHeader';
 import '../../styles/standalone-viewer.css';
 
 // Fix Leaflet default icon issue
@@ -56,7 +57,7 @@ const StandaloneViewerPage: React.FC = () => {
 
                 // For development, use getProjectConstructor with ID
                 const data = await projectService.getProjectConstructor(Number(id));
-                console.log(data);
+
                 clearInterval(progressInterval);
                 setLoadingProgress(100);
 
@@ -70,7 +71,8 @@ const StandaloneViewerPage: React.FC = () => {
                     data.layer_groups.forEach((group: any) => {
                         if (group.layers) {
                             group.layers.forEach((layer: any) => {
-                                if (layer.is_visible_by_default) {
+                                // Check both is_visible and is_visible_by_default
+                                if (layer.is_visible || layer.is_visible_by_default) {
                                     initialVisibleLayers.add(layer.id);
                                 }
                             });
@@ -119,11 +121,24 @@ const StandaloneViewerPage: React.FC = () => {
 
         try {
             const project = projectData.project;
-            const center = [
-                project.default_center_lat || 40.7128,
-                project.default_center_lng || -74.0060
-            ];
-            const zoom = project.default_zoom_level || 10;
+
+            // Handle both possible structures for default center
+            let center: [number, number];
+            if (project.default_center && typeof project.default_center === 'object') {
+                // New structure: default_center: { lat: number, lng: number }
+                center = [
+                    project.default_center.lat || 40.7128,
+                    project.default_center.lng || -74.0060
+                ];
+            } else {
+                // Old structure: default_center_lat, default_center_lng
+                center = [
+                    project.default_center_lat || 40.7128,
+                    project.default_center_lng || -74.0060
+                ];
+            }
+
+            const zoom = project.default_zoom_level || project.default_zoom || 10;
 
             // Create map
             const map = L.map(mapContainerRef.current, {
@@ -132,16 +147,34 @@ const StandaloneViewerPage: React.FC = () => {
                 zoomControl: true
             });
 
+            // Create custom panes for better layer management
+            map.createPane('basemapPane');
+            map.getPane('basemapPane')!.style.zIndex = '200';
+
+            map.createPane('overlayPane');
+            map.getPane('overlayPane')!.style.zIndex = '400';
+
+            console.log('Map initialized with center:', center, 'and zoom:', zoom);
+
             // Add basemap
             if (activeBasemap && projectData.basemaps) {
                 const basemap = projectData.basemaps.find((b: any) => b.id === activeBasemap);
                 if (basemap) {
                     const tileLayer = L.tileLayer(basemap.url_template, {
                         ...basemap.options,
-                        attribution: basemap.attribution
+                        attribution: basemap.attribution,
+                        pane: 'basemapPane'
                     }).addTo(map);
+
                     basemapLayersRef.current[basemap.id] = tileLayer;
                 }
+            } else if (!projectData.basemaps || projectData.basemaps.length === 0) {
+                // Add default OSM basemap if no basemaps are configured
+                const defaultTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                    maxZoom: 19,
+                    pane: 'basemapPane'
+                }).addTo(map);
             }
 
             mapRef.current = map;
@@ -157,23 +190,34 @@ const StandaloneViewerPage: React.FC = () => {
         if (!mapRef.current || !projectData || loading) return;
 
         const loadVisibleLayers = async () => {
-            // Load each visible layer
+            // Collect all visible layers and sort by z-index
+            const layersToLoad: any[] = [];
+
             for (const layerId of Array.from(visibleLayers)) {
                 if (layersRef.current[layerId]) continue;
 
-                try {
-                    let layerInfo: any = null;
-                    for (const group of projectData.layer_groups) {
-                        for (const layer of group.layers) {
-                            if (layer.id === layerId) {
-                                layerInfo = layer;
-                                break;
-                            }
+                let layerInfo: any = null;
+                for (const group of projectData.layer_groups) {
+                    for (const layer of group.layers) {
+                        if (layer.id === layerId) {
+                            layerInfo = layer;
+                            break;
                         }
-                        if (layerInfo) break;
                     }
+                    if (layerInfo) break;
+                }
 
-                    if (!layerInfo) continue;
+                if (layerInfo) {
+                    layersToLoad.push(layerInfo);
+                }
+            }
+
+            // Sort by z-index (lower z-index loads first)
+            layersToLoad.sort((a, b) => (a.z_index || 0) - (b.z_index || 0));
+
+            // Load each layer in order
+            for (const layerInfo of layersToLoad) {
+                try {
 
                     // Get map bounds and zoom
                     const bounds = mapRef.current!.getBounds();
@@ -181,7 +225,7 @@ const StandaloneViewerPage: React.FC = () => {
                     const boundsParam = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
 
                     // Fetch layer data
-                    const data = await mapService.getLayerData(layerId, {
+                    const data = await mapService.getLayerData(layerInfo.id, {
                         chunk_id: 1,
                         bounds: boundsParam,
                         zoom: zoom
@@ -199,7 +243,8 @@ const StandaloneViewerPage: React.FC = () => {
                             showCoverageOnHover: false,
                             zoomToBoundsOnClick: true,
                             spiderfyOnMaxZoom: true,
-                            removeOutsideVisibleBounds: true
+                            removeOutsideVisibleBounds: true,
+                            pane: 'overlayPane'
                         });
 
                         L.geoJSON(data, {
@@ -212,7 +257,7 @@ const StandaloneViewerPage: React.FC = () => {
                                         iconAnchor: [16, 32],
                                         popupAnchor: [0, -32]
                                     });
-                                    return L.marker(latlng, { icon });
+                                    return L.marker(latlng, { icon, pane: 'overlayPane' });
                                 } else {
                                     return L.circleMarker(latlng, {
                                         radius: layerInfo.style?.radius || 6,
@@ -220,7 +265,8 @@ const StandaloneViewerPage: React.FC = () => {
                                         color: layerInfo.style?.color || '#3388ff',
                                         weight: layerInfo.style?.weight || 1,
                                         opacity: layerInfo.style?.opacity || 1,
-                                        fillOpacity: layerInfo.style?.fillOpacity || 0.8
+                                        fillOpacity: layerInfo.style?.fillOpacity || 0.8,
+                                        pane: 'overlayPane'
                                     });
                                 }
                             },
@@ -247,6 +293,7 @@ const StandaloneViewerPage: React.FC = () => {
                                 fillColor: layerInfo.style?.fillColor || layerInfo.style?.color || '#3388ff',
                                 fillOpacity: layerInfo.style?.fillOpacity || 0.2
                             }),
+                            pane: 'overlayPane',
                             pointToLayer: (feature, latlng) => {
                                 if (layerInfo.marker_type === 'image' && layerInfo.marker_image_url) {
                                     const icon = L.icon({
@@ -255,7 +302,7 @@ const StandaloneViewerPage: React.FC = () => {
                                         iconAnchor: [16, 32],
                                         popupAnchor: [0, -32]
                                     });
-                                    return L.marker(latlng, { icon });
+                                    return L.marker(latlng, { icon, pane: 'overlayPane' });
                                 } else {
                                     return L.circleMarker(latlng, {
                                         radius: layerInfo.style?.radius || 6,
@@ -263,7 +310,8 @@ const StandaloneViewerPage: React.FC = () => {
                                         color: layerInfo.style?.color || '#000',
                                         weight: layerInfo.style?.weight || 1,
                                         opacity: layerInfo.style?.opacity || 1,
-                                        fillOpacity: layerInfo.style?.fillOpacity || 0.8
+                                        fillOpacity: layerInfo.style?.fillOpacity || 0.8,
+                                        pane: 'overlayPane'
                                     });
                                 }
                             },
@@ -281,10 +329,16 @@ const StandaloneViewerPage: React.FC = () => {
                     }
 
                     mapLayer.addTo(mapRef.current!);
-                    layersRef.current[layerId] = mapLayer;
+
+                    // Set the z-index if specified
+                    if (layerInfo.z_index && mapLayer instanceof L.FeatureGroup || mapLayer instanceof L.LayerGroup) {
+                        (mapLayer as any).setZIndex?.(layerInfo.z_index);
+                    }
+
+                    layersRef.current[layerInfo.id] = mapLayer;
 
                 } catch (err) {
-                    console.error(`Error loading layer ${layerId}:`, err);
+                    console.error(`Error loading layer ${layerInfo.id}:`, err);
                 }
             }
 
@@ -326,8 +380,10 @@ const StandaloneViewerPage: React.FC = () => {
         if (basemap) {
             const tileLayer = L.tileLayer(basemap.url_template, {
                 ...basemap.options,
-                attribution: basemap.attribution
+                attribution: basemap.attribution,
+                pane: 'basemapPane'
             }).addTo(mapRef.current);
+
             basemapLayersRef.current[basemap.id] = tileLayer;
             setActiveBasemap(basemapId);
         }
