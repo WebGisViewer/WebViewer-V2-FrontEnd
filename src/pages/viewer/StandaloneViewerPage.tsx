@@ -397,55 +397,57 @@ const StandaloneViewerPage: React.FC = () => {
     // Show error state
     if (error) {
         return (
-            <Box
-                display="flex"
-                justifyContent="center"
-                alignItems="center"
-                height="100vh"
-                bgcolor="#f5f5f5"
-            >
-                <Paper elevation={3} sx={{ p: 4, maxWidth: 500 }}>
-                    <Typography variant="h5" color="error" gutterBottom>
-                        Error Loading Map
-                    </Typography>
-                    <Typography>{error}</Typography>
-                </Paper>
-            </Box>
+            <>
+                <StandaloneHeader />
+                <Box
+                    display="flex"
+                    justifyContent="center"
+                    alignItems="center"
+                    height="calc(100vh - 48px)"
+                    marginTop="48px"
+                >
+                    <Paper elevation={3} sx={{ p: 3, maxWidth: 500 }}>
+                        <Typography variant="h5" color="error" gutterBottom>
+                            Error
+                        </Typography>
+                        <Typography>{error}</Typography>
+                    </Paper>
+                </Box>
+            </>
         );
     }
 
     return (
-        <Box display="flex" height="100vh" position="relative" className="standalone-viewer-container">
-            {/* Map container */}
-            <Box
-                ref={mapContainerRef}
-                width="100%"
-                height="100%"
-                sx={{
-                    '& .leaflet-control-container': {
-                        '& .leaflet-top.leaflet-left': {
-                            top: '10px',
-                            left: '10px',
-                        },
-                        '& .leaflet-top.leaflet-right': {
-                            top: '10px',
-                            right: '10px',
-                        }
-                    }
-                }}
-            />
+        <>
+            {/* Header - Always at the top */}
+            <StandaloneHeader projectName={projectData?.project?.name} />
 
-            {/* Layer control */}
-            {projectData && (
-                <StandaloneLayerControl
-                    projectData={projectData}
-                    visibleLayers={visibleLayers}
-                    activeBasemap={activeBasemap}
-                    onLayerToggle={handleLayerToggle}
-                    onBasemapChange={handleBasemapChange}
+            {/* Map Container - Below the header */}
+            <Box
+                position="relative"
+                height="calc(100vh - 48px)"
+                marginTop="48px"
+            >
+                {/* Map */}
+                <Box
+                    ref={mapContainerRef}
+                    width="100%"
+                    height="100%"
+                    sx={{ position: 'absolute', top: 0, left: 0 }}
                 />
-            )}
-        </Box>
+
+                {/* Layer Control */}
+                {projectData && (
+                    <StandaloneLayerControl
+                        projectData={projectData}
+                        visibleLayers={visibleLayers}
+                        activeBasemap={activeBasemap}
+                        onLayerToggle={handleLayerToggle}
+                        onBasemapChange={handleBasemapChange}
+                    />
+                )}
+            </Box>
+        </>
     );
 };
 
