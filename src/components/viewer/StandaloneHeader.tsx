@@ -57,7 +57,7 @@ const StandaloneHeader: React.FC<StandaloneHeaderProps> = ({ projectName }) => {
                     </Typography>
                 )}
             </Title>
-            <ContactLink href="mailto:support@wireless2020.com">
+            <ContactLink href="https://www.wireless2020.com/contact">
                 Contact support
             </ContactLink>
         </HeaderContainer>

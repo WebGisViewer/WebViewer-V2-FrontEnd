@@ -114,6 +114,24 @@ const LayerGroupContent = styled(Box)({
     paddingLeft: '16px',
 });
 
+// New styled component for layer item with color indicator
+const LayerItem = styled(Box)({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    width: '100%',
+});
+
+// Color indicator component
+const ColorIndicator = styled(Box)<{ layerColor: string; layerType?: string }>(({ layerColor, layerType }) => ({
+    width: '14px',
+    height: '14px',
+    backgroundColor: layerType === 'polygon' || layerType === 'Polygon Layer' ? 'transparent' : layerColor,
+    border: `2px solid ${layerColor}`,
+    borderRadius: layerType === 'point' || layerType === 'Point Layer' ? '50%' : '2px',
+    flexShrink: 0,
+}));
+
 const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                                                                            projectData,
                                                                            visibleLayers,
@@ -179,6 +197,20 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
         const newExpanded = !isExpanded;
         setIsExpanded(newExpanded);
         setIsManuallyExpanded(newExpanded);
+    };
+
+    // Function to extract color from layer style
+    const getLayerColor = (layer: any): string => {
+        // Check for different color properties in order of preference
+        if (layer.style?.fillColor) return layer.style.fillColor;
+        if (layer.style?.color) return layer.style.color;
+
+        // Default colors based on layer type
+        if (layer.layer_type_name === 'Point Layer') return '#3388ff';
+        if (layer.layer_type_name === 'Line Layer') return '#3388ff';
+        if (layer.layer_type_name === 'Polygon Layer') return '#3388ff';
+
+        return '#3388ff'; // Default color
     };
 
     // Cleanup on unmount
@@ -265,17 +297,23 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                             <Collapse in={expandedGroups.has(group.id)}>
                                 <LayerGroupContent>
                                     {group.layers?.map((layer: any) => (
-                                        <FormControlLabel
-                                            key={layer.id}
-                                            control={
-                                                <Checkbox
-                                                    checked={visibleLayers.has(layer.id)}
-                                                    onChange={() => onLayerToggle(layer.id)}
-                                                    size="small"
-                                                />
-                                            }
-                                            label={layer.name}
-                                        />
+                                        <LayerItem key={layer.id}>
+                                            <ColorIndicator
+                                                layerColor={getLayerColor(layer)}
+                                                layerType={layer.layer_type_name}
+                                            />
+                                            <FormControlLabel
+                                                control={
+                                                    <Checkbox
+                                                        checked={visibleLayers.has(layer.id)}
+                                                        onChange={() => onLayerToggle(layer.id)}
+                                                        size="small"
+                                                    />
+                                                }
+                                                label={layer.name}
+                                                sx={{ margin: 0, flex: 1 }}
+                                            />
+                                        </LayerItem>
                                     ))}
                                 </LayerGroupContent>
                             </Collapse>

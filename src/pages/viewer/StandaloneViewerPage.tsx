@@ -148,27 +148,21 @@ const StandaloneViewerPage: React.FC = () => {
             });
 
             // Create custom panes for better layer management
+            // IMPORTANT: Set explicit z-indices
             map.createPane('basemapPane');
             map.getPane('basemapPane')!.style.zIndex = '200';
 
             map.createPane('overlayPane');
             map.getPane('overlayPane')!.style.zIndex = '400';
 
+            // Create additional panes for different overlay types if needed
+            map.createPane('markerPane');
+            map.getPane('markerPane')!.style.zIndex = '600';
+
             console.log('Map initialized with center:', center, 'and zoom:', zoom);
 
-            // Add basemap
-            if (activeBasemap && projectData.basemaps) {
-                const basemap = projectData.basemaps.find((b: any) => b.id === activeBasemap);
-                if (basemap) {
-                    const tileLayer = L.tileLayer(basemap.url_template, {
-                        ...basemap.options,
-                        attribution: basemap.attribution,
-                        pane: 'basemapPane'
-                    }).addTo(map);
-
-                    basemapLayersRef.current[basemap.id] = tileLayer;
-                }
-            } else if (!projectData.basemaps || projectData.basemaps.length === 0) {
+            // Add initial basemap if no basemaps are configured
+            if (!projectData.basemaps || projectData.basemaps.length === 0) {
                 // Add default OSM basemap if no basemaps are configured
                 const defaultTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -183,7 +177,39 @@ const StandaloneViewerPage: React.FC = () => {
             console.error('Error initializing map:', err);
             setError('Failed to initialize map');
         }
-    }, [projectData, loading, activeBasemap]);
+    }, [projectData, loading]); // Remove activeBasemap from dependencies
+
+    // Handle basemap changes separately
+    useEffect(() => {
+        if (!mapRef.current || !projectData || loading || !activeBasemap) return;
+
+        // Remove all current basemaps
+        Object.values(basemapLayersRef.current).forEach(layer => {
+            if (mapRef.current!.hasLayer(layer)) {
+                mapRef.current!.removeLayer(layer);
+            }
+        });
+        basemapLayersRef.current = {};
+
+        // Add new basemap
+        const basemap = projectData.basemaps?.find((b: any) => b.id === activeBasemap);
+        if (basemap) {
+            const tileLayer = L.tileLayer(basemap.url_template, {
+                ...basemap.options,
+                attribution: basemap.attribution,
+                pane: 'basemapPane' // Ensure it goes to the basemap pane
+            });
+
+            // Add to map
+            tileLayer.addTo(mapRef.current);
+            basemapLayersRef.current[basemap.id] = tileLayer;
+
+            // Force refresh of pane z-indices
+            mapRef.current.getPane('basemapPane')!.style.zIndex = '200';
+            mapRef.current.getPane('overlayPane')!.style.zIndex = '400';
+            mapRef.current.getPane('markerPane')!.style.zIndex = '600';
+        }
+    }, [activeBasemap, projectData, loading]);
 
     // Load layers when visibility changes
     useEffect(() => {
@@ -218,7 +244,6 @@ const StandaloneViewerPage: React.FC = () => {
             // Load each layer in order
             for (const layerInfo of layersToLoad) {
                 try {
-
                     // Get map bounds and zoom
                     const bounds = mapRef.current!.getBounds();
                     const zoom = mapRef.current!.getZoom();
@@ -244,7 +269,7 @@ const StandaloneViewerPage: React.FC = () => {
                             zoomToBoundsOnClick: true,
                             spiderfyOnMaxZoom: true,
                             removeOutsideVisibleBounds: true,
-                            pane: 'overlayPane'
+                            pane: 'overlayPane' // Use overlay pane for clusters
                         });
 
                         L.geoJSON(data, {
@@ -257,7 +282,10 @@ const StandaloneViewerPage: React.FC = () => {
                                         iconAnchor: [16, 32],
                                         popupAnchor: [0, -32]
                                     });
-                                    return L.marker(latlng, { icon, pane: 'overlayPane' });
+                                    return L.marker(latlng, {
+                                        icon,
+                                        pane: 'markerPane' // Use marker pane for markers
+                                    });
                                 } else {
                                     return L.circleMarker(latlng, {
                                         radius: layerInfo.style?.radius || 6,
@@ -293,7 +321,7 @@ const StandaloneViewerPage: React.FC = () => {
                                 fillColor: layerInfo.style?.fillColor || layerInfo.style?.color || '#3388ff',
                                 fillOpacity: layerInfo.style?.fillOpacity || 0.2
                             }),
-                            pane: 'overlayPane',
+                            pane: 'overlayPane', // Ensure using overlay pane
                             pointToLayer: (feature, latlng) => {
                                 if (layerInfo.marker_type === 'image' && layerInfo.marker_image_url) {
                                     const icon = L.icon({
@@ -302,7 +330,10 @@ const StandaloneViewerPage: React.FC = () => {
                                         iconAnchor: [16, 32],
                                         popupAnchor: [0, -32]
                                     });
-                                    return L.marker(latlng, { icon, pane: 'overlayPane' });
+                                    return L.marker(latlng, {
+                                        icon,
+                                        pane: 'markerPane' // Use marker pane for markers
+                                    });
                                 } else {
                                     return L.circleMarker(latlng, {
                                         radius: layerInfo.style?.radius || 6,
@@ -329,12 +360,6 @@ const StandaloneViewerPage: React.FC = () => {
                     }
 
                     mapLayer.addTo(mapRef.current!);
-
-                    // Set the z-index if specified
-                    if (layerInfo.z_index && mapLayer instanceof L.FeatureGroup || mapLayer instanceof L.LayerGroup) {
-                        (mapLayer as any).setZIndex?.(layerInfo.z_index);
-                    }
-
                     layersRef.current[layerInfo.id] = mapLayer;
 
                 } catch (err) {
@@ -367,26 +392,7 @@ const StandaloneViewerPage: React.FC = () => {
     };
 
     const handleBasemapChange = (basemapId: number) => {
-        if (!mapRef.current || !projectData) return;
-
-        // Remove current basemap
-        Object.values(basemapLayersRef.current).forEach(layer => {
-            mapRef.current!.removeLayer(layer);
-        });
-        basemapLayersRef.current = {};
-
-        // Add new basemap
-        const basemap = projectData.basemaps?.find((b: any) => b.id === basemapId);
-        if (basemap) {
-            const tileLayer = L.tileLayer(basemap.url_template, {
-                ...basemap.options,
-                attribution: basemap.attribution,
-                pane: 'basemapPane'
-            }).addTo(mapRef.current);
-
-            basemapLayersRef.current[basemap.id] = tileLayer;
-            setActiveBasemap(basemapId);
-        }
+        setActiveBasemap(basemapId);
     };
 
     // Show loading screen
