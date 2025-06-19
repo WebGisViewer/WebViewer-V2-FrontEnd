@@ -1,5 +1,5 @@
-// src/pages/viewer/StandaloneViewerPage.tsx
-import React, { useEffect, useState, useRef } from 'react';
+// src/pages/viewer/StandaloneViewerPage.tsx - With Zoom-Based Tower Visibility
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Box, CircularProgress, Typography, Paper } from '@mui/material';
 import * as L from 'leaflet';
@@ -10,7 +10,23 @@ import { projectService, mapService } from '../../services';
 import StandaloneLayerControl from '../../components/viewer/StandaloneLayerControl';
 import StandaloneLoadingScreen from '../../components/viewer/StandaloneLoadingScreen';
 import StandaloneHeader from '../../components/viewer/StandaloneHeader';
+import {
+    frontendBufferManager,
+    isAntennaTowerLayer,
+    getTowerCompanyFromLayerName,
+    TowerWithBuffers,
+    BufferVisibilityState
+} from '../../components/viewer/FrontendAntennaBufferSystem';
+import {
+    zoomVisibilityManager,
+    ZoomHint,
+    createZoomHintMessage
+} from '../../components/viewer/ZoomVisibilityManager';
 import '../../styles/standalone-viewer.css';
+import {
+    createTowerPopupHTML,
+    createBufferPopupHTML
+} from '../../components/viewer/EnhancedTowerPopupSystem';
 
 // Fix Leaflet default icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -20,12 +36,135 @@ L.Icon.Default.mergeOptions({
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
+// Enhanced interfaces for JSON structure support
+interface ClusteringOptions {
+    disableClusteringAtZoom?: number;
+    showCoverageOnHover?: boolean;
+    zoomToBoundsOnClick?: boolean;
+    spiderfyOnMaxZoom?: boolean;
+    removeOutsideVisibleBounds?: boolean;
+    maxClusterRadius?: number;
+    [key: string]: any;
+}
+
+interface ClusteringConfig {
+    enabled: boolean;
+    options?: ClusteringOptions;
+}
+
+interface LayerFunction {
+    id?: number;
+    type: string;
+    name?: string;
+    arguments?: Record<string, any>;
+    priority?: number;
+}
+
+interface StandaloneLayer {
+    id: number;
+    name: string;
+    layer_type_name?: string;
+    type?: string;
+    is_visible?: boolean;
+    is_visible_by_default?: boolean;
+    z_index?: number;
+    style?: any;
+    marker_type?: string;
+    marker_image_url?: string;
+
+    // Clustering properties - multiple formats supported
+    enable_clustering?: boolean;
+    clustering_options?: ClusteringOptions;
+    clustering?: ClusteringConfig;
+    functions?: LayerFunction[];
+}
+
+// WiFi Tower Icon Generator
+const createWiFiTowerSVG = (color: string, size: number = 32): string => {
+    return `
+        <svg width="${size}" height="${size}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+            <!-- Marker background -->
+            <path d="M16 2C10.477 2 6 6.477 6 12c0 7.2 10 18 10 18s10-10.8 10-18c0-5.523-4.477-10-10-10z" 
+                  fill="${color}" stroke="white" stroke-width="1"/>
+            
+            <!-- WiFi tower icon -->
+            <g transform="translate(16,12)">
+                <!-- Tower base -->
+                <rect x="-1" y="2" width="2" height="6" fill="white"/>
+                
+                <!-- WiFi signal arcs -->
+                <path d="M-6,-2 A8,8 0 0,1 6,-2" fill="none" stroke="white" stroke-width="1.5" opacity="0.9"/>
+                <path d="M-4,-1 A5,5 0 0,1 4,-1" fill="none" stroke="white" stroke-width="1.5" opacity="0.9"/>
+                <path d="M-2,0 A2.5,2.5 0 0,1 2,0" fill="none" stroke="white" stroke-width="1.5" opacity="0.9"/>
+                
+                <!-- Center dot -->
+                <circle cx="0" cy="1" r="1" fill="white"/>
+            </g>
+        </svg>
+    `;
+};
+
+// Tower company colors matching the upload pipeline
+const towerCompanyColors = {
+    'American Towers': '#dc3545', // red
+    'SBA': '#6f42c1', // purple
+    'Crown Castle': '#fd7e14', // orange
+    'Other': '#0d6efd' // blue
+};
+
+// Helper functions
+const hasClusteringEnabled = (layer: StandaloneLayer): boolean => {
+    return !!(
+        layer.enable_clustering ||
+        (layer.clustering && layer.clustering.enabled) ||
+        (layer.functions && layer.functions.some(func => func.type === 'clustering'))
+    );
+};
+
+const getClusteringOptions = (layer: StandaloneLayer): ClusteringOptions => {
+    if (layer.clustering_options) return layer.clustering_options;
+    if (layer.clustering && layer.clustering.options) return layer.clustering.options;
+    if (layer.functions) {
+        const clusteringFunction = layer.functions.find(func => func.type === 'clustering');
+        if (clusteringFunction && clusteringFunction.arguments) return clusteringFunction.arguments;
+    }
+    return {
+        disableClusteringAtZoom: 11,
+        showCoverageOnHover: false,
+        zoomToBoundsOnClick: true,
+        spiderfyOnMaxZoom: true
+    };
+};
+
+const isPointLayer = (layer: StandaloneLayer): boolean => {
+    return !!(
+        layer.layer_type_name === 'Point Layer' ||
+        layer.layer_type_name === 'Point' ||
+        layer.type === 'Default-Line' ||
+        layer.type === 'Point'
+    );
+};
+
+const createTowerIcon = (companyName: string): L.DivIcon => {
+    const color = towerCompanyColors[companyName] || towerCompanyColors['Other'];
+    const svgString = createWiFiTowerSVG(color);
+
+    return L.divIcon({
+        html: svgString,
+        className: 'custom-tower-icon',
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+        popupAnchor: [0, -32]
+    });
+};
+
 const StandaloneViewerPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
     const layersRef = useRef<{ [id: number]: L.Layer }>({});
     const basemapLayersRef = useRef<{ [id: number]: L.TileLayer }>({});
+    const towerDataRef = useRef<{ [id: number]: any }>({});
 
     const [projectData, setProjectData] = useState<any | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
@@ -33,6 +172,88 @@ const StandaloneViewerPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [visibleLayers, setVisibleLayers] = useState<Set<number>>(new Set());
     const [activeBasemap, setActiveBasemap] = useState<number | null>(null);
+
+    // Frontend buffer system state
+    const [towerBufferRelationships, setTowerBufferRelationships] = useState<TowerWithBuffers[]>([]);
+    const [bufferVisibility, setBufferVisibility] = useState<BufferVisibilityState>({});
+
+    // Zoom visibility state
+    const [zoomHints, setZoomHints] = useState<ZoomHint[]>([]);
+    const [currentZoom, setCurrentZoom] = useState<number>(7);
+
+    // Inject tower icon CSS
+    useEffect(() => {
+        const style = document.createElement('style');
+        style.textContent = `
+            .custom-tower-icon {
+                background: none !important;
+                border: none !important;
+            }
+            .custom-tower-icon svg {
+                filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.3));
+            }
+        `;
+        document.head.appendChild(style);
+
+        return () => {
+            document.head.removeChild(style);
+        };
+    }, []);
+
+    // Subscribe to buffer manager changes
+    useEffect(() => {
+        const handleBufferChange = (towers: TowerWithBuffers[]) => {
+            setTowerBufferRelationships(towers);
+
+            // Update buffer visibility state
+            setBufferVisibility(prev => {
+                const newState = { ...prev };
+                towers.forEach(tower => {
+                    tower.buffers.forEach(buffer => {
+                        if (!(buffer.id in newState)) {
+                            newState[buffer.id] = false; // Default to hidden
+                        }
+                    });
+                });
+                return newState;
+            });
+        };
+
+        frontendBufferManager.onVisibilityChange(handleBufferChange);
+
+        return () => {
+            frontendBufferManager.offVisibilityChange(handleBufferChange);
+        };
+    }, []);
+
+    // Subscribe to zoom visibility manager changes
+    useEffect(() => {
+        const handleZoomLayerToggle = (layerId: number, visible: boolean, reason: 'zoom' | 'user') => {
+            if (reason === 'zoom') {
+                // Update the actual layer visibility when zoom changes
+                if (mapRef.current && layersRef.current[layerId]) {
+                    if (visible) {
+                        mapRef.current.addLayer(layersRef.current[layerId]);
+                    } else {
+                        mapRef.current.removeLayer(layersRef.current[layerId]);
+                    }
+                }
+                console.log(`Zoom manager toggled layer ${layerId}: ${visible}`);
+            }
+        };
+
+        const handleZoomHints = (hints: ZoomHint[]) => {
+            setZoomHints(hints);
+        };
+
+        zoomVisibilityManager.onLayerToggle(handleZoomLayerToggle);
+        zoomVisibilityManager.onZoomHints(handleZoomHints);
+
+        return () => {
+            zoomVisibilityManager.offLayerToggle(handleZoomLayerToggle);
+            zoomVisibilityManager.offZoomHints(handleZoomHints);
+        };
+    }, []);
 
     // Load project data
     useEffect(() => {
@@ -47,7 +268,6 @@ const StandaloneViewerPage: React.FC = () => {
                     throw new Error('No project ID provided');
                 }
 
-                // Simulate loading progress
                 const progressInterval = setInterval(() => {
                     setLoadingProgress(prev => {
                         if (prev >= 90) return prev;
@@ -55,7 +275,6 @@ const StandaloneViewerPage: React.FC = () => {
                     });
                 }, 300);
 
-                // For development, use getProjectConstructor with ID
                 const data = await projectService.getProjectConstructor(Number(id));
 
                 clearInterval(progressInterval);
@@ -71,7 +290,6 @@ const StandaloneViewerPage: React.FC = () => {
                     data.layer_groups.forEach((group: any) => {
                         if (group.layers) {
                             group.layers.forEach((layer: any) => {
-                                // Check both is_visible and is_visible_by_default
                                 if (layer.is_visible || layer.is_visible_by_default) {
                                     initialVisibleLayers.add(layer.id);
                                 }
@@ -89,7 +307,6 @@ const StandaloneViewerPage: React.FC = () => {
                     setActiveBasemap(data.basemaps[0].id);
                 }
 
-                // Small delay to show 100% progress
                 setTimeout(() => {
                     if (mounted) setLoading(false);
                 }, 500);
@@ -114,76 +331,57 @@ const StandaloneViewerPage: React.FC = () => {
     useEffect(() => {
         if (!projectData || !mapContainerRef.current || loading) return;
 
-        // Clean up previous map
         if (mapRef.current) {
+            frontendBufferManager.cleanup(mapRef.current);
+            zoomVisibilityManager.cleanup();
             mapRef.current.remove();
         }
 
         try {
-            const project = projectData.project;
-
-            // Handle both possible structures for default center
-            let center: [number, number];
-            if (project.default_center && typeof project.default_center === 'object') {
-                // New structure: default_center: { lat: number, lng: number }
-                center = [
-                    project.default_center.lat || 40.7128,
-                    project.default_center.lng || -74.0060
-                ];
-            } else {
-                // Old structure: default_center_lat, default_center_lng
-                center = [
-                    project.default_center_lat || 40.7128,
-                    project.default_center_lng || -74.0060
-                ];
-            }
-
-            const zoom = project.default_zoom_level || project.default_zoom || 10;
-
-            // Create map
             const map = L.map(mapContainerRef.current, {
-                center: center as [number, number],
-                zoom: zoom,
-                zoomControl: true
+                center: [
+                    projectData.project?.default_center_lat || 40.0,
+                    projectData.project?.default_center_lng || -83.0
+                ],
+                zoom: projectData.project?.default_zoom_level || 7,
+                zoomControl: false,
+                attributionControl: false
             });
 
-            // Create custom panes for better layer management
-            // IMPORTANT: Set explicit z-indices
+            // Create panes for better layer ordering
             map.createPane('basemapPane');
-            map.getPane('basemapPane')!.style.zIndex = '200';
-
             map.createPane('overlayPane');
-            map.getPane('overlayPane')!.style.zIndex = '400';
-
-            // Create additional panes for different overlay types if needed
             map.createPane('markerPane');
+
+            map.getPane('basemapPane')!.style.zIndex = '200';
+            map.getPane('overlayPane')!.style.zIndex = '400';
             map.getPane('markerPane')!.style.zIndex = '600';
 
-            console.log('Map initialized with center:', center, 'and zoom:', zoom);
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-            // Add initial basemap if no basemaps are configured
-            if (!projectData.basemaps || projectData.basemaps.length === 0) {
-                // Add default OSM basemap if no basemaps are configured
-                const defaultTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-                    maxZoom: 19,
-                    pane: 'basemapPane'
-                }).addTo(map);
-            }
+            // Track zoom changes
+            map.on('zoomend', () => {
+                setCurrentZoom(map.getZoom());
+            });
 
             mapRef.current = map;
+            setCurrentZoom(map.getZoom());
+
+            // Initialize zoom visibility manager
+            zoomVisibilityManager.initialize(map, frontendBufferManager);
+
+            console.log('Map initialized with zoom visibility manager');
 
         } catch (err) {
             console.error('Error initializing map:', err);
             setError('Failed to initialize map');
         }
-    }, [projectData, loading]); // Remove activeBasemap from dependencies
+    }, [projectData, loading]);
 
-    // Handle basemap changes separately
+    // Handle basemap changes
     useEffect(() => {
         if (!mapRef.current || !projectData || loading || !activeBasemap) return;
 
-        // Remove all current basemaps
         Object.values(basemapLayersRef.current).forEach(layer => {
             if (mapRef.current!.hasLayer(layer)) {
                 mapRef.current!.removeLayer(layer);
@@ -191,20 +389,17 @@ const StandaloneViewerPage: React.FC = () => {
         });
         basemapLayersRef.current = {};
 
-        // Add new basemap
         const basemap = projectData.basemaps?.find((b: any) => b.id === activeBasemap);
         if (basemap) {
             const tileLayer = L.tileLayer(basemap.url_template, {
                 ...basemap.options,
                 attribution: basemap.attribution,
-                pane: 'basemapPane' // Ensure it goes to the basemap pane
+                pane: 'basemapPane'
             });
 
-            // Add to map
             tileLayer.addTo(mapRef.current);
             basemapLayersRef.current[basemap.id] = tileLayer;
 
-            // Force refresh of pane z-indices
             mapRef.current.getPane('basemapPane')!.style.zIndex = '200';
             mapRef.current.getPane('overlayPane')!.style.zIndex = '400';
             mapRef.current.getPane('markerPane')!.style.zIndex = '600';
@@ -216,17 +411,16 @@ const StandaloneViewerPage: React.FC = () => {
         if (!mapRef.current || !projectData || loading) return;
 
         const loadVisibleLayers = async () => {
-            // Collect all visible layers and sort by z-index
-            const layersToLoad: any[] = [];
+            const layersToLoad: StandaloneLayer[] = [];
 
             for (const layerId of Array.from(visibleLayers)) {
                 if (layersRef.current[layerId]) continue;
 
-                let layerInfo: any = null;
+                let layerInfo: StandaloneLayer | null = null;
                 for (const group of projectData.layer_groups) {
                     for (const layer of group.layers) {
                         if (layer.id === layerId) {
-                            layerInfo = layer;
+                            layerInfo = layer as StandaloneLayer;
                             break;
                         }
                     }
@@ -238,18 +432,14 @@ const StandaloneViewerPage: React.FC = () => {
                 }
             }
 
-            // Sort by z-index (lower z-index loads first)
             layersToLoad.sort((a, b) => (a.z_index || 0) - (b.z_index || 0));
 
-            // Load each layer in order
             for (const layerInfo of layersToLoad) {
                 try {
-                    // Get map bounds and zoom
                     const bounds = mapRef.current!.getBounds();
                     const zoom = mapRef.current!.getZoom();
                     const boundsParam = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
 
-                    // Fetch layer data
                     const data = await mapService.getLayerData(layerInfo.id, {
                         chunk_id: 1,
                         bounds: boundsParam,
@@ -258,24 +448,39 @@ const StandaloneViewerPage: React.FC = () => {
 
                     if (!data.features || data.features.length === 0) continue;
 
-                    // Create layer based on type
+                    // Store tower data for buffer generation
+                    const isTowerLayer = isAntennaTowerLayer(layerInfo.name);
+                    if (isTowerLayer) {
+                        towerDataRef.current[layerInfo.id] = data;
+                    }
+
                     let mapLayer: L.Layer;
 
-                    if (layerInfo.layer_type_name === 'Point Layer' && layerInfo.enable_clustering) {
-                        // Clustered points
+                    const shouldCluster = isPointLayer(layerInfo) && hasClusteringEnabled(layerInfo);
+
+                    if (shouldCluster) {
+                        // Create clustered layer (for BEAD locations, etc.)
+                        const clusteringOptions = getClusteringOptions(layerInfo);
+
                         const clusterGroup = L.markerClusterGroup({
-                            ...layerInfo.clustering_options,
-                            showCoverageOnHover: false,
-                            zoomToBoundsOnClick: true,
-                            spiderfyOnMaxZoom: true,
+                            ...clusteringOptions,
+                            showCoverageOnHover: clusteringOptions.showCoverageOnHover ?? false,
+                            zoomToBoundsOnClick: clusteringOptions.zoomToBoundsOnClick ?? true,
+                            spiderfyOnMaxZoom: clusteringOptions.spiderfyOnMaxZoom ?? true,
                             removeOutsideVisibleBounds: true,
-                            pane: 'overlayPane' // Use overlay pane for clusters
+                            pane: 'overlayPane'
                         });
 
                         L.geoJSON(data, {
                             pointToLayer: (feature, latlng) => {
-                                // Check for custom marker
-                                if (layerInfo.marker_type === 'image' && layerInfo.marker_image_url) {
+                                if (isTowerLayer) {
+                                    const companyName = getTowerCompanyFromLayerName(layerInfo.name);
+                                    const towerIcon = createTowerIcon(companyName);
+                                    return L.marker(latlng, {
+                                        icon: towerIcon,
+                                        pane: 'markerPane'
+                                    });
+                                } else if (layerInfo.marker_type === 'image' && layerInfo.marker_image_url) {
                                     const icon = L.icon({
                                         iconUrl: layerInfo.marker_image_url,
                                         iconSize: [32, 32],
@@ -284,35 +489,50 @@ const StandaloneViewerPage: React.FC = () => {
                                     });
                                     return L.marker(latlng, {
                                         icon,
-                                        pane: 'markerPane' // Use marker pane for markers
+                                        pane: 'markerPane'
                                     });
                                 } else {
                                     return L.circleMarker(latlng, {
-                                        radius: layerInfo.style?.radius || 6,
-                                        fillColor: layerInfo.style?.fillColor || layerInfo.style?.color || '#3388ff',
-                                        color: layerInfo.style?.color || '#3388ff',
+                                        radius: layerInfo.style?.radius || 4,
+                                        fillColor: layerInfo.style?.fillColor || '#01fbff',
+                                        color: layerInfo.style?.color || 'black',
                                         weight: layerInfo.style?.weight || 1,
                                         opacity: layerInfo.style?.opacity || 1,
-                                        fillOpacity: layerInfo.style?.fillOpacity || 0.8,
+                                        fillOpacity: layerInfo.style?.fillOpacity || 1,
                                         pane: 'overlayPane'
                                     });
                                 }
                             },
                             onEachFeature: (feature, leafletLayer) => {
                                 if (feature.properties) {
-                                    let popupContent = '<div style="max-width: 300px;">';
-                                    for (const [key, value] of Object.entries(feature.properties)) {
-                                        popupContent += `<strong>${key}:</strong> ${value}<br>`;
+                                    if (isTowerLayer) {
+                                        // Use enhanced tower popup for antenna towers
+                                        const companyName = getTowerCompanyFromLayerName(layerInfo.name);
+                                        const popupHTML = createTowerPopupHTML(feature.properties, companyName);
+                                        leafletLayer.bindPopup(popupHTML, {
+                                            maxWidth: 450,
+                                            maxHeight: 400,
+                                            className: 'tower-popup'
+                                        });
+                                    } else {
+                                        // Standard popup for other layers
+                                        let popupContent = '<div style="max-width: 300px;">';
+                                        for (const [key, value] of Object.entries(feature.properties)) {
+                                            if (value !== null && value !== undefined) {
+                                                popupContent += `<strong>${key}:</strong> ${value}<br>`;
+                                            }
+                                        }
+                                        popupContent += '</div>';
+                                        leafletLayer.bindPopup(popupContent);
                                     }
-                                    popupContent += '</div>';
-                                    leafletLayer.bindPopup(popupContent);
                                 }
                             }
                         }).addTo(clusterGroup);
 
                         mapLayer = clusterGroup;
+
                     } else {
-                        // Non-clustered layer
+                        // Create non-clustered layer
                         mapLayer = L.geoJSON(data, {
                             style: (feature) => ({
                                 color: layerInfo.style?.color || '#3388ff',
@@ -321,28 +541,30 @@ const StandaloneViewerPage: React.FC = () => {
                                 fillColor: layerInfo.style?.fillColor || layerInfo.style?.color || '#3388ff',
                                 fillOpacity: layerInfo.style?.fillOpacity || 0.2
                             }),
-                            pane: 'overlayPane', // Ensure using overlay pane
                             pointToLayer: (feature, latlng) => {
-                                if (layerInfo.marker_type === 'image' && layerInfo.marker_image_url) {
+                                if (isTowerLayer) {
+                                    const companyName = getTowerCompanyFromLayerName(layerInfo.name);
+                                    const towerIcon = createTowerIcon(companyName);
+                                    return L.marker(latlng, {
+                                        icon: towerIcon,
+                                        pane: 'markerPane'
+                                    });
+                                } else if (layerInfo.marker_type === 'image' && layerInfo.marker_image_url) {
                                     const icon = L.icon({
                                         iconUrl: layerInfo.marker_image_url,
                                         iconSize: [32, 32],
                                         iconAnchor: [16, 32],
                                         popupAnchor: [0, -32]
                                     });
-                                    return L.marker(latlng, {
-                                        icon,
-                                        pane: 'markerPane' // Use marker pane for markers
-                                    });
+                                    return L.marker(latlng, { icon });
                                 } else {
                                     return L.circleMarker(latlng, {
                                         radius: layerInfo.style?.radius || 6,
-                                        fillColor: layerInfo.style?.fillColor || '#3388ff',
-                                        color: layerInfo.style?.color || '#000',
+                                        fillColor: layerInfo.style?.fillColor || layerInfo.style?.color || '#3388ff',
+                                        color: layerInfo.style?.color || '#3388ff',
                                         weight: layerInfo.style?.weight || 1,
                                         opacity: layerInfo.style?.opacity || 1,
-                                        fillOpacity: layerInfo.style?.fillOpacity || 0.8,
-                                        pane: 'overlayPane'
+                                        fillOpacity: layerInfo.style?.fillOpacity || 0.8
                                     });
                                 }
                             },
@@ -350,7 +572,9 @@ const StandaloneViewerPage: React.FC = () => {
                                 if (feature.properties) {
                                     let popupContent = '<div style="max-width: 300px;">';
                                     for (const [key, value] of Object.entries(feature.properties)) {
-                                        popupContent += `<strong>${key}:</strong> ${value}<br>`;
+                                        if (value !== null && value !== undefined) {
+                                            popupContent += `<strong>${key}:</strong> ${value}<br>`;
+                                        }
                                     }
                                     popupContent += '</div>';
                                     leafletLayer.bindPopup(popupContent);
@@ -359,19 +583,63 @@ const StandaloneViewerPage: React.FC = () => {
                         });
                     }
 
-                    mapLayer.addTo(mapRef.current!);
+                    // Store layer reference but don't add to map yet - zoom manager will control this
                     layersRef.current[layerInfo.id] = mapLayer;
 
+                    // Register with zoom visibility manager
+                    zoomVisibilityManager.registerLayer(
+                        layerInfo.id,
+                        layerInfo.name,
+                        isTowerLayer,
+                        true // User wants it visible
+                    );
+
+                    // Generate frontend buffer layers for antenna towers
+                    if (isTowerLayer) {
+                        const companyName = getTowerCompanyFromLayerName(layerInfo.name);
+
+                        console.log(`Generating frontend buffers for ${layerInfo.name} (${companyName}) with zoom control`);
+
+                        const buffers = frontendBufferManager.generateBuffersFromTowerData(
+                            data,
+                            layerInfo.id,
+                            layerInfo.name,
+                            companyName
+                        );
+
+                        console.log(`Generated ${buffers.length} buffer layers with ${buffers.reduce((sum, b) => sum + b.featureCount, 0)} total buffer circles`);
+                    }
+
+                    console.log(`Successfully loaded ${isTowerLayer ? 'tower' : 'regular'} layer: ${layerInfo.name}`, {
+                        isTowerLayer,
+                        companyName: isTowerLayer ? getTowerCompanyFromLayerName(layerInfo.name) : 'N/A',
+                        clustered: shouldCluster,
+                        featureCount: data.features.length,
+                        buffersGenerated: isTowerLayer,
+                        zoomControlled: isTowerLayer
+                    });
+
                 } catch (err) {
-                    console.error(`Error loading layer ${layerInfo.id}:`, err);
+                    console.error(`Error loading layer ${layerInfo.name}:`, err);
                 }
             }
 
             // Remove layers that are no longer visible
             for (const loadedLayerId of Object.keys(layersRef.current).map(Number)) {
-                if (!visibleLayers.has(loadedLayerId) && mapRef.current) {
-                    mapRef.current.removeLayer(layersRef.current[loadedLayerId]);
-                    delete layersRef.current[loadedLayerId];
+                if (!visibleLayers.has(loadedLayerId)) {
+                    if (mapRef.current && layersRef.current[loadedLayerId]) {
+                        mapRef.current.removeLayer(layersRef.current[loadedLayerId]);
+                        delete layersRef.current[loadedLayerId];
+                    }
+
+                    // Remove tower data and buffers
+                    delete towerDataRef.current[loadedLayerId];
+                    if (mapRef.current) {
+                        frontendBufferManager.removeBuffersForTower(loadedLayerId, mapRef.current);
+                    }
+
+                    // Unregister from zoom manager
+                    zoomVisibilityManager.unregisterLayer(loadedLayerId);
                 }
             }
         };
@@ -379,21 +647,55 @@ const StandaloneViewerPage: React.FC = () => {
         loadVisibleLayers();
     }, [visibleLayers, projectData, loading]);
 
-    const handleLayerToggle = (layerId: number) => {
+    // Handle layer toggle
+    const handleLayerToggle = useCallback((layerId: number) => {
         setVisibleLayers(prev => {
             const newSet = new Set(prev);
-            if (newSet.has(layerId)) {
+            const wasVisible = newSet.has(layerId);
+
+            if (wasVisible) {
                 newSet.delete(layerId);
+                // Update zoom manager
+                zoomVisibilityManager.setUserVisibility(layerId, false);
             } else {
                 newSet.add(layerId);
+                // Update zoom manager
+                zoomVisibilityManager.setUserVisibility(layerId, true);
             }
+
             return newSet;
         });
-    };
+    }, []);
+
+    // Handle buffer toggle
+    const handleBufferToggle = useCallback((bufferId: string, isVisible: boolean) => {
+        setBufferVisibility(prev => ({
+            ...prev,
+            [bufferId]: isVisible
+        }));
+
+        if (mapRef.current) {
+            // Check if parent tower is visible
+            const buffer = frontendBufferManager.getBufferLayer(bufferId);
+            const parentVisible = buffer ? visibleLayers.has(buffer.parentLayerId) : false;
+
+            frontendBufferManager.toggleBufferLayer(bufferId, isVisible, mapRef.current, parentVisible);
+        }
+    }, [visibleLayers]);
 
     const handleBasemapChange = (basemapId: number) => {
         setActiveBasemap(basemapId);
     };
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (mapRef.current) {
+                frontendBufferManager.cleanup(mapRef.current);
+                zoomVisibilityManager.cleanup();
+            }
+        };
+    }, []);
 
     // Show loading screen
     if (loading && !error) {
@@ -425,16 +727,12 @@ const StandaloneViewerPage: React.FC = () => {
 
     return (
         <>
-            {/* Header - Always at the top */}
             <StandaloneHeader projectName={projectData?.project?.name} />
-
-            {/* Map Container - Below the header */}
             <Box
                 position="relative"
                 height="calc(100vh - 48px)"
                 marginTop="48px"
             >
-                {/* Map */}
                 <Box
                     ref={mapContainerRef}
                     width="100%"
@@ -442,7 +740,30 @@ const StandaloneViewerPage: React.FC = () => {
                     sx={{ position: 'absolute', top: 0, left: 0 }}
                 />
 
-                {/* Layer Control */}
+                {/* Zoom hints notification */}
+                {zoomHints.length > 0 && (
+                    <Box
+                        position="absolute"
+                        bottom="50px"
+                        left="10px"
+                        backgroundColor="rgba(0,0,0,0.8)"
+                        color="white"
+                        padding="8px 12px"
+                        borderRadius="5px"
+                        zIndex={1000}
+                        maxWidth="300px"
+                    >
+                        <Typography variant="body2" sx={{ fontSize: '12px', fontWeight: 600 }}>
+                            Zoom Level: {currentZoom}
+                        </Typography>
+                        {zoomHints.map((hint, index) => (
+                            <Typography key={index} variant="body2" sx={{ fontSize: '11px', marginTop: '2px' }}>
+                                {createZoomHintMessage(hint)}
+                            </Typography>
+                        ))}
+                    </Box>
+                )}
+
                 {projectData && (
                     <StandaloneLayerControl
                         projectData={projectData}
@@ -450,6 +771,11 @@ const StandaloneViewerPage: React.FC = () => {
                         activeBasemap={activeBasemap}
                         onLayerToggle={handleLayerToggle}
                         onBasemapChange={handleBasemapChange}
+                        towerBufferRelationships={towerBufferRelationships}
+                        onBufferToggle={handleBufferToggle}
+                        bufferVisibility={bufferVisibility}
+                        zoomHints={zoomHints}
+                        currentZoom={currentZoom}
                     />
                 )}
             </Box>

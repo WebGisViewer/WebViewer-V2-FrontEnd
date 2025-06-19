@@ -1,11 +1,15 @@
-// src/components/viewer/StandaloneLayerControl.tsx
-import React, { useState, useRef } from 'react';
-import { Box, FormControlLabel, Checkbox, Radio, RadioGroup, Typography, IconButton, Collapse } from '@mui/material';
+// src/components/viewer/StandaloneLayerControl.tsx - With Zoom Level Feedback
+import React, { useState, useRef, useEffect } from 'react';
+import { Box, FormControlLabel, Checkbox, Radio, RadioGroup, Typography, IconButton, Collapse, Tooltip } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import LayersIcon from '@mui/icons-material/Layers';
 import CloseIcon from '@mui/icons-material/Close';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import { TowerWithBuffers, BufferVisibilityState, VirtualBufferLayer } from './FrontendAntennaBufferSystem';
+import { ZoomHint, zoomVisibilityManager } from './ZoomVisibilityManager';
 
 interface StandaloneLayerControlProps {
     projectData: any;
@@ -13,9 +17,16 @@ interface StandaloneLayerControlProps {
     activeBasemap: number | null;
     onLayerToggle: (layerId: number) => void;
     onBasemapChange: (basemapId: number) => void;
+    // Frontend buffer system props
+    towerBufferRelationships?: TowerWithBuffers[];
+    onBufferToggle?: (bufferId: string, isVisible: boolean) => void;
+    bufferVisibility?: BufferVisibilityState;
+    // Zoom system props
+    zoomHints?: ZoomHint[];
+    currentZoom?: number;
 }
 
-// Style the control to look like Folium's layer control
+// Styled components
 const ControlContainer = styled(Box)(({ theme }) => ({
     position: 'absolute',
     top: '10px',
@@ -48,7 +59,7 @@ const ControlToggle = styled(Box)({
 
 const ControlContent = styled(Box)({
     minWidth: '220px',
-    maxWidth: '300px',
+    maxWidth: '320px',
     maxHeight: '80vh',
     overflowY: 'auto',
     overflowX: 'hidden',
@@ -76,11 +87,15 @@ const ControlContent = styled(Box)({
 
 const SectionHeader = styled(Typography)({
     fontSize: '13px',
-    fontWeight: 'bold',
+    fontWeight: 600,
     color: '#333',
-    margin: '12px 0 6px 0',
+    marginBottom: '6px',
+    marginTop: '8px',
     borderBottom: '1px solid #ddd',
-    paddingBottom: '4px',
+    paddingBottom: '2px',
+    '&:first-of-type': {
+        marginTop: '0',
+    }
 });
 
 const LayerGroupContainer = styled(Box)({
@@ -91,39 +106,37 @@ const LayerGroupHeader = styled(Box)({
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '4px 0',
     cursor: 'pointer',
-    '&:hover': {
-        backgroundColor: '#f5f5f5',
-        marginLeft: '-4px',
-        marginRight: '-4px',
-        paddingLeft: '4px',
-        paddingRight: '4px',
-    }
-});
-
-const LayerGroupTitle = styled(Typography)({
+    padding: '4px 0',
     fontSize: '13px',
     fontWeight: 600,
-    color: '#444',
-    userSelect: 'none',
-    flex: 1,
+    color: '#333',
+    '&:hover': {
+        backgroundColor: '#f5f5f5',
+    }
 });
 
 const LayerGroupContent = styled(Box)({
     paddingLeft: '16px',
 });
 
-// New styled component for layer item with color indicator
 const LayerItem = styled(Box)({
     display: 'flex',
     alignItems: 'center',
-    gap: '6px',
-    width: '100%',
+    gap: '8px',
+    marginBottom: '2px',
 });
 
-// Color indicator component
-const ColorIndicator = styled(Box)<{ layerColor: string; layerType?: string }>(({ layerColor, layerType }) => ({
+const BufferLayerItem = styled(Box)({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    marginBottom: '1px',
+    paddingLeft: '24px', // Extra indent for buffer layers
+    opacity: 0.9,
+});
+
+const ColorIndicator = styled('div')<{ layerColor: string; layerType: string }>(({ layerColor, layerType }) => ({
     width: '14px',
     height: '14px',
     backgroundColor: layerType === 'polygon' || layerType === 'Polygon Layer' ? 'transparent' : layerColor,
@@ -132,18 +145,83 @@ const ColorIndicator = styled(Box)<{ layerColor: string; layerType?: string }>((
     flexShrink: 0,
 }));
 
+const BufferIndicator = styled('div')<{ bufferColor: string; distance: number }>(({ bufferColor, distance }) => ({
+    width: '12px',
+    height: '12px',
+    backgroundColor: 'transparent',
+    border: `2px solid ${bufferColor}`,
+    borderRadius: '50%',
+    borderStyle: distance === 2 ? 'solid' : 'dashed', // Solid for 2mi, dashed for 5mi
+    flexShrink: 0,
+    position: 'relative',
+    '&::after': {
+        content: '""',
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: '4px',
+        height: '4px',
+        backgroundColor: bufferColor,
+        borderRadius: '50%',
+        opacity: 0.7,
+    }
+}));
+
+const ZoomIndicator = styled(Box)<{ disabled: boolean }>(({ disabled }) => ({
+    display: 'flex',
+    alignItems: 'center',
+    marginLeft: 'auto',
+    color: disabled ? '#f44336' : '#4caf50',
+    '& svg': {
+        fontSize: '16px',
+    }
+}));
+
+const ZoomRequirement = styled(Typography)({
+    fontSize: '10px',
+    color: '#f44336',
+    fontStyle: 'italic',
+    marginLeft: '20px',
+    marginTop: '1px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+});
+
+const BufferStats = styled(Typography)({
+    fontSize: '10px',
+    color: '#888',
+    fontStyle: 'italic',
+    marginLeft: '20px',
+    marginTop: '2px',
+});
+
+const ZoomStatus = styled(Box)({
+    backgroundColor: '#f0f0f0',
+    padding: '6px 8px',
+    borderRadius: '3px',
+    marginBottom: '8px',
+    fontSize: '11px',
+    color: '#666',
+});
+
 const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                                                                            projectData,
                                                                            visibleLayers,
                                                                            activeBasemap,
                                                                            onLayerToggle,
                                                                            onBasemapChange,
+                                                                           towerBufferRelationships = [],
+                                                                           onBufferToggle,
+                                                                           bufferVisibility = {},
+                                                                           zoomHints = [],
+                                                                           currentZoom = 7,
                                                                        }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [isManuallyExpanded, setIsManuallyExpanded] = useState(false);
     const collapseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [expandedGroups, setExpandedGroups] = useState<Set<number>>(() => {
-        // Expand the first group by default
         if (projectData?.layer_groups && projectData.layer_groups.length > 0) {
             return new Set([projectData.layer_groups[0].id]);
         }
@@ -158,7 +236,6 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
         }
     };
 
-    // Auto-expand on hover if collapsed
     const handleMouseEnter = () => {
         clearCollapseTimeout();
         if (!isExpanded) {
@@ -168,7 +245,6 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
     };
 
     const handleMouseLeave = () => {
-        // Only auto-collapse if it wasn't manually expanded
         if (!isManuallyExpanded && isExpanded) {
             collapseTimeoutRef.current = setTimeout(() => {
                 setIsExpanded(false);
@@ -201,20 +277,55 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
 
     // Function to extract color from layer style
     const getLayerColor = (layer: any): string => {
-        // Check for different color properties in order of preference
         if (layer.style?.fillColor) return layer.style.fillColor;
         if (layer.style?.color) return layer.style.color;
-
-        // Default colors based on layer type
         if (layer.layer_type_name === 'Point Layer') return '#3388ff';
         if (layer.layer_type_name === 'Line Layer') return '#3388ff';
         if (layer.layer_type_name === 'Polygon Layer') return '#3388ff';
+        return '#3388ff';
+    };
 
-        return '#3388ff'; // Default color
+    // Check if a layer is an antenna tower layer
+    const isAntennaTowerLayer = (layerName: string): boolean => {
+        return layerName.toLowerCase().includes('antenna locations');
+    };
+
+    // Find tower buffer relationship for a layer
+    const getTowerBufferRelationship = (layerId: number): TowerWithBuffers | undefined => {
+        return towerBufferRelationships.find(rel => rel.towerId === layerId);
+    };
+
+    // Get zoom status for a layer
+    const getLayerZoomStatus = (layerId: number): { canShow: boolean; needsZoom: number | null } => {
+        return zoomVisibilityManager.getLayerZoomStatus(layerId);
+    };
+
+    // Check if layer is hidden due to zoom
+    const isLayerHiddenByZoom = (layerId: number): boolean => {
+        const status = getLayerZoomStatus(layerId);
+        return !status.canShow;
+    };
+
+    // Handle buffer toggle
+    const handleBufferToggle = (bufferId: string, isVisible: boolean) => {
+        if (onBufferToggle) {
+            onBufferToggle(bufferId, isVisible);
+        }
+    };
+
+    // Format buffer statistics
+    const formatBufferStats = (buffer: VirtualBufferLayer): string => {
+        return `${buffer.featureCount} coverage area${buffer.featureCount !== 1 ? 's' : ''}`;
+    };
+
+    // Format zoom requirement message
+    const formatZoomRequirement = (needsZoom: number): string => {
+        const zoomDiff = needsZoom - currentZoom;
+        return `Zoom in ${zoomDiff} more level${zoomDiff !== 1 ? 's' : ''}`;
     };
 
     // Cleanup on unmount
-    React.useEffect(() => {
+    useEffect(() => {
         return () => {
             clearCollapseTimeout();
         };
@@ -250,11 +361,23 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                         </IconButton>
                     )}
 
+                    {/* Zoom status indicator */}
+                    <ZoomStatus>
+                        <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                            Zoom Level: {currentZoom}
+                        </Typography>
+                        {zoomHints.length > 0 && (
+                            <Typography variant="caption" sx={{ display: 'block', color: '#f44336', marginTop: '2px' }}>
+                                {zoomHints.length} tower layer{zoomHints.length !== 1 ? 's' : ''} hidden
+                            </Typography>
+                        )}
+                    </ZoomStatus>
+
                     {/* Basemaps section */}
                     {projectData.basemaps && projectData.basemaps.length > 0 && (
                         <>
-                            <SectionHeader sx={{ marginTop: isManuallyExpanded ? '24px' : '12px' }}>
-                                Base Layers
+                            <SectionHeader sx={{ marginTop: isManuallyExpanded ? '24px' : '0' }}>
+                                Base Maps
                             </SectionHeader>
                             <RadioGroup
                                 value={activeBasemap || ''}
@@ -272,53 +395,154 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                         </>
                     )}
 
-                    {/* Overlays section with layer groups */}
-                    <SectionHeader
-                        sx={{
-                            marginTop: (!projectData.basemaps || projectData.basemaps.length === 0) && isManuallyExpanded
-                                ? '24px'
-                                : undefined
-                        }}
-                    >
-                        Overlays
-                    </SectionHeader>
-                    {projectData.layer_groups?.map((group: any) => (
-                        <LayerGroupContainer key={group.id}>
-                            <LayerGroupHeader onClick={(e) => toggleLayerGroup(group.id, e)}>
-                                <LayerGroupTitle>{group.name}</LayerGroupTitle>
-                                <IconButton size="small" sx={{ padding: '2px' }}>
-                                    {expandedGroups.has(group.id) ?
-                                        <ExpandLessIcon sx={{ fontSize: '18px' }} /> :
-                                        <ExpandMoreIcon sx={{ fontSize: '18px' }} />
-                                    }
-                                </IconButton>
-                            </LayerGroupHeader>
+                    {/* Layer groups section */}
+                    {projectData.layer_groups && projectData.layer_groups.length > 0 && (
+                        <>
+                            <SectionHeader>Layers</SectionHeader>
 
-                            <Collapse in={expandedGroups.has(group.id)}>
-                                <LayerGroupContent>
-                                    {group.layers?.map((layer: any) => (
-                                        <LayerItem key={layer.id}>
-                                            <ColorIndicator
-                                                layerColor={getLayerColor(layer)}
-                                                layerType={layer.layer_type_name}
-                                            />
-                                            <FormControlLabel
-                                                control={
-                                                    <Checkbox
-                                                        checked={visibleLayers.has(layer.id)}
-                                                        onChange={() => onLayerToggle(layer.id)}
-                                                        size="small"
-                                                    />
-                                                }
-                                                label={layer.name}
-                                                sx={{ margin: 0, flex: 1 }}
-                                            />
-                                        </LayerItem>
-                                    ))}
-                                </LayerGroupContent>
-                            </Collapse>
-                        </LayerGroupContainer>
-                    ))}
+                            {projectData.layer_groups.map((group: any) => (
+                                <LayerGroupContainer key={group.id}>
+                                    <LayerGroupHeader onClick={(e) => toggleLayerGroup(group.id, e)}>
+                                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '13px' }}>
+                                            {group.name}
+                                        </Typography>
+                                        <IconButton size="small" sx={{ padding: '2px' }}>
+                                            {expandedGroups.has(group.id) ?
+                                                <ExpandLessIcon sx={{ fontSize: '18px' }} /> :
+                                                <ExpandMoreIcon sx={{ fontSize: '18px' }} />
+                                            }
+                                        </IconButton>
+                                    </LayerGroupHeader>
+
+                                    <Collapse in={expandedGroups.has(group.id)}>
+                                        <LayerGroupContent>
+                                            {group.layers?.map((layer: any) => {
+                                                const isTowerLayer = isAntennaTowerLayer(layer.name);
+                                                const towerRelationship = getTowerBufferRelationship(layer.id);
+                                                const layerVisible = visibleLayers.has(layer.id);
+                                                const zoomStatus = getLayerZoomStatus(layer.id);
+                                                const hiddenByZoom = isTowerLayer && !zoomStatus.canShow;
+
+                                                return (
+                                                    <Box key={layer.id}>
+                                                        {/* Main layer item */}
+                                                        <LayerItem>
+                                                            <ColorIndicator
+                                                                layerColor={getLayerColor(layer)}
+                                                                layerType={layer.layer_type_name}
+                                                            />
+                                                            <FormControlLabel
+                                                                control={
+                                                                    <Checkbox
+                                                                        checked={layerVisible}
+                                                                        onChange={() => onLayerToggle(layer.id)}
+                                                                        size="small"
+                                                                        disabled={hiddenByZoom}
+                                                                    />
+                                                                }
+                                                                label={
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                                                                        <Typography
+                                                                            sx={{
+                                                                                fontSize: '13px',
+                                                                                color: hiddenByZoom ? '#ccc' : '#333',
+                                                                                textDecoration: hiddenByZoom ? 'line-through' : 'none'
+                                                                            }}
+                                                                        >
+                                                                            {layer.name}
+                                                                        </Typography>
+                                                                        {isTowerLayer && (
+                                                                            <Tooltip title={hiddenByZoom ? `Minimum zoom: ${zoomStatus.needsZoom}` : 'Zoom controlled'}>
+                                                                                <ZoomIndicator disabled={hiddenByZoom}>
+                                                                                    {hiddenByZoom ? <VisibilityOffIcon /> : <ZoomInIcon />}
+                                                                                </ZoomIndicator>
+                                                                            </Tooltip>
+                                                                        )}
+                                                                    </Box>
+                                                                }
+                                                                sx={{ margin: 0, flex: 1 }}
+                                                            />
+                                                        </LayerItem>
+
+                                                        {/* Zoom requirement message */}
+                                                        {isTowerLayer && hiddenByZoom && zoomStatus.needsZoom && (
+                                                            <ZoomRequirement>
+                                                                <ZoomInIcon sx={{ fontSize: '12px' }} />
+                                                                {formatZoomRequirement(zoomStatus.needsZoom)}
+                                                            </ZoomRequirement>
+                                                        )}
+
+                                                        {/* Buffer layers for antenna towers */}
+                                                        {isTowerLayer && towerRelationship && layerVisible && !hiddenByZoom && (
+                                                            <Box sx={{ marginTop: '4px', marginBottom: '8px' }}>
+                                                                {towerRelationship.buffers.map((buffer: VirtualBufferLayer) => {
+                                                                    const bufferVisible = bufferVisibility[buffer.id] || false;
+
+                                                                    return (
+                                                                        <Box key={buffer.id}>
+                                                                            <BufferLayerItem>
+                                                                                <BufferIndicator
+                                                                                    bufferColor={buffer.color}
+                                                                                    distance={buffer.distance}
+                                                                                />
+                                                                                <FormControlLabel
+                                                                                    control={
+                                                                                        <Checkbox
+                                                                                            checked={bufferVisible}
+                                                                                            onChange={(e) => handleBufferToggle(buffer.id, e.target.checked)}
+                                                                                            size="small"
+                                                                                            disabled={!layerVisible}
+                                                                                        />
+                                                                                    }
+                                                                                    label={`${buffer.distance} mile coverage`}
+                                                                                    sx={{
+                                                                                        margin: 0,
+                                                                                        flex: 1,
+                                                                                        '& .MuiFormControlLabel-label': {
+                                                                                            fontSize: '12px',
+                                                                                            fontStyle: 'italic',
+                                                                                            color: layerVisible ? '#666' : '#ccc'
+                                                                                        }
+                                                                                    }}
+                                                                                />
+                                                                            </BufferLayerItem>
+
+                                                                            {/* Buffer statistics */}
+                                                                            {layerVisible && (
+                                                                                <BufferStats>
+                                                                                    {formatBufferStats(buffer)}
+                                                                                </BufferStats>
+                                                                            )}
+                                                                        </Box>
+                                                                    );
+                                                                })}
+                                                            </Box>
+                                                        )}
+                                                    </Box>
+                                                );
+                                            })}
+                                        </LayerGroupContent>
+                                    </Collapse>
+                                </LayerGroupContainer>
+                            ))}
+                        </>
+                    )}
+
+                    {/* System statistics */}
+                    {(towerBufferRelationships.length > 0 || zoomHints.length > 0) && (
+                        <Box sx={{ marginTop: '8px', padding: '4px', backgroundColor: '#f9f9f9', borderRadius: '3px' }}>
+                            {towerBufferRelationships.length > 0 && (
+                                <Typography variant="caption" sx={{ fontSize: '10px', color: '#666', display: 'block' }}>
+                                    Coverage: {towerBufferRelationships.length} tower group{towerBufferRelationships.length !== 1 ? 's' : ''}
+                                    {' • '}
+                                    {towerBufferRelationships.reduce((sum, tower) => sum + tower.buffers.length, 0)} buffer layer{towerBufferRelationships.reduce((sum, tower) => sum + tower.buffers.length, 0) !== 1 ? 's' : ''}
+                                </Typography>
+                            )}
+                            <Typography variant="caption" sx={{ fontSize: '10px', color: '#666', display: 'block' }}>
+                                Zoom: Level {currentZoom} • Min for towers: {zoomVisibilityManager.getMinZoomForTowers()}
+                            </Typography>
+                        </Box>
+                    )}
                 </ControlContent>
             )}
         </ControlContainer>
