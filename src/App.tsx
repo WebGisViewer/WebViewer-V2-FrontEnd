@@ -10,6 +10,7 @@ import { MainLayout } from './components/layout/MainLayout';
 
 // Auth Pages
 import LoginPage from './pages/auth/LoginPage';
+import RegistrationPage from './pages/auth/RegistrationPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 
@@ -49,7 +50,7 @@ import StandaloneViewerPage from './pages/viewer/StandaloneViewerPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
 // Component Page
-import StylesPage from './pages/components/StylesPage'
+import StylesPage from './pages/components/StylesPage';
 import StyleCreatePage from "./pages/components/StyleCreatePage.tsx";
 import StyleEditPage from './pages/components/StyleEditPage.tsx';
 
@@ -67,12 +68,11 @@ import BasemapsPage from './pages/components/BasemapsPage';
 import BasemapCreatePage from './pages/components/BasemapCreatePage';
 import BasemapEditPage from './pages/components/BasemapEditPage';
 
-
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
-import ApiInspectorPage from './pages/debug/ApiInspectorPage';
 
+import ApiInspectorPage from './pages/debug/ApiInspectorPage';
 
 function App() {
     return (
@@ -83,6 +83,7 @@ function App() {
                     <Routes>
                         {/* Auth Routes */}
                         <Route path="/login" element={<LoginPage />} />
+                        <Route path="/register" element={<RegistrationPage />} />
                         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                         <Route path="/reset-password/:token/:uidb64" element={<ResetPasswordPage />} />
                         <Route path="debug/api-inspector" element={<ProtectedRoute component={ApiInspectorPage} />} />

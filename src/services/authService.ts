@@ -76,6 +76,24 @@ export const isAuthenticated = (): boolean => {
     return !!localStorage.getItem('accessToken');
 };
 
+/**
+ * Check if a username is available
+ */
+export const checkUsernameAvailability = (username: string): Promise<{ available: boolean }> => {
+    return apiGet<{ available: boolean }>(`/api/users/check-username/?username=${encodeURIComponent(username)}`);
+};
+
+/**
+ * Register a new user
+ */
+export const registerUser = (userData: {
+    username: string;
+    email: string;
+    password: string;
+}): Promise<{ detail: string }> => {
+    return apiPost<{ detail: string }>('/auth/register/', userData);
+};
+
 const authService = {
     login,
     logout,
@@ -85,7 +103,9 @@ const authService = {
     resetPassword,
     storeAuthTokens,
     removeAuthTokens,
-    isAuthenticated
+    isAuthenticated,
+    checkUsernameAvailability,
+    registerUser
 };
 
 export default authService;
