@@ -1,4 +1,4 @@
-// src/components/viewer/EnhancedTowerPopupSystem.ts
+// src/components/viewer/EnhancedTowerPopupSystem.tsx
 // Enhanced Tower Popup System to match V1 styling
 
 interface TowerProperties {
@@ -164,46 +164,48 @@ export const createTowerPopupHTML = (properties: TowerProperties, companyName: s
                         const originalText = btn.textContent;
                         btn.textContent = 'Copied!';
                         btn.style.backgroundColor = '#4CAF50';
+                        
                         setTimeout(() => {
                             btn.textContent = originalText;
                             btn.style.backgroundColor = '#4CAF50';
-                        }, 1500);
+                        }, 2000);
                     }
                 }).catch(err => {
-                    console.error('Failed to copy: ', err);
-                    fallbackCopy_${popupId}(textContent);
+                    console.error('Failed to copy:', err);
+                    // Fallback to selection method
+                    fallbackCopyMethod_${popupId}();
                 });
             } else {
-                fallbackCopy_${popupId}(textContent);
+                // Fallback for older browsers
+                fallbackCopyMethod_${popupId}();
             }
         }
         
-        function fallbackCopy_${popupId}(text) {
-            // Fallback for older browsers
-            const textArea = document.createElement('textarea');
-            textArea.value = text;
-            textArea.style.position = 'fixed';
-            textArea.style.left = '-999999px';
-            textArea.style.top = '-999999px';
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
+        function fallbackCopyMethod_${popupId}() {
+            const table = document.querySelector('.tower-table-${popupId}');
+            if (!table) return;
+            
+            const range = document.createRange();
+            range.selectNode(table);
+            
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
             
             try {
                 document.execCommand('copy');
                 const btn = document.querySelector('.copy-btn-${popupId}');
                 if (btn) {
-                    const originalText = btn.textContent;
                     btn.textContent = 'Copied!';
                     setTimeout(() => {
-                        btn.textContent = originalText;
-                    }, 1500);
+                        btn.textContent = 'Copy';
+                    }, 2000);
                 }
             } catch (err) {
-                console.error('Fallback copy failed: ', err);
-            } finally {
-                document.body.removeChild(textArea);
+                console.error('Fallback copy failed:', err);
             }
+            
+            selection.removeAllRanges();
         }
         </script>
     `;
@@ -211,12 +213,31 @@ export const createTowerPopupHTML = (properties: TowerProperties, companyName: s
     return popupHTML;
 };
 
-// Enhanced popup creation for buffer circles
-export const createBufferPopupHTML = (
-    properties: TowerProperties,
-    distance: number,
-    companyName: string
-): string => {
+// Helper function to determine if a layer is an antenna/tower layer
+export const isAntennaLayer = (layerName: string): boolean => {
+    const antennaKeywords = ['antenna', 'tower', 'fcc tower'];
+    const lowerName = layerName.toLowerCase();
+    return antennaKeywords.some(keyword => lowerName.includes(keyword));
+};
+
+// Get tower company from layer name
+export const getTowerCompanyFromLayerName = (layerName: string): string => {
+    const lowerName = layerName.toLowerCase();
+
+    if (lowerName.includes('american tower')) return 'American Towers';
+    if (lowerName.includes('sba')) return 'SBA';
+    if (lowerName.includes('crown castle')) return 'Crown Castle';
+    if (lowerName.includes('other')) return 'Other';
+
+    // Default fallback
+    return 'FCC Tower';
+};
+
+// Create styled popup HTML for antenna buffers
+export const createBufferPopupHTML = (properties: any, bufferType: string): string => {
+    // Generate unique ID for this popup instance
+    const popupId = `buffer-popup-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
     const safeValue = (val: any, defaultVal: string = 'N/A'): string => {
         if (val === null || val === undefined || val === '') {
             return defaultVal;
@@ -224,34 +245,69 @@ export const createBufferPopupHTML = (
         return val.toString();
     };
 
-    return `
-        <div style="max-width: 250px; font-family: Arial, sans-serif;">
-            <div style="font-weight: bold; font-size: 14px; color: #333; margin-bottom: 8px;">
-                ${distance} Mile Coverage Area
-            </div>
-            <div style="font-size: 12px; line-height: 1.4;">
-                <strong>Tower:</strong> ${safeValue(properties.entity)}<br>
-                <strong>Company:</strong> ${companyName}<br>
-                <strong>Location:</strong> ${safeValue(properties.lat)}, ${safeValue(properties.lon)}<br>
-                <strong>Height:</strong> ${safeValue(properties.overall_height_above_ground)} meters<br>
-                <strong>Coverage:</strong> ${distance} mile radius
-            </div>
+    const popupHTML = `
+        <style>
+        .popup-container-${popupId} {
+            font-family: Arial, sans-serif;
+            max-width: 350px;
+            position: relative;
+        }
+        
+        .buffer-table-${popupId} {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: Arial, sans-serif;
+            margin-top: 10px;
+        }
+        
+        .buffer-table-${popupId} td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        
+        .buffer-table-${popupId} td:first-child {
+            background-color: #f5f5f5;
+            font-weight: bold;
+            min-width: 120px;
+        }
+        
+        .buffer-table-${popupId} tr:hover {
+            background-color: #f9f9f9;
+        }
+        
+        .popup-header-${popupId} {
+            font-weight: bold;
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .buffer-type-${popupId} {
+            background-color: #e3f2fd;
+            color: #1976d2;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-block;
+            margin-bottom: 8px;
+        }
+        </style>
+
+        <div class="popup-container-${popupId}">
+            <div class="popup-header-${popupId}">Tower Coverage Area</div>
+            <div class="buffer-type-${popupId}">${bufferType}</div>
+            <table class='buffer-table-${popupId}'>
+                <tr><td>Tower ID</td><td>${safeValue(properties.tower_id)}</td></tr>
+                <tr><td>Tower Name</td><td>${safeValue(properties.tower_name)}</td></tr>
+                <tr><td>Company</td><td>${safeValue(properties.company)}</td></tr>
+                <tr><td>Coverage Radius</td><td>${safeValue(properties.radius)} km</td></tr>
+                <tr><td>Tower Height</td><td>${safeValue(properties.tower_height)} m</td></tr>
+                <tr><td>Location</td><td>${safeValue(properties.lat)}, ${safeValue(properties.lon)}</td></tr>
+            </table>
         </div>
     `;
-};
 
-// Helper function to detect if properties look like tower data
-export const isTowerPropertyStructure = (properties: any): boolean => {
-    return !!(
-        properties && (
-            properties.entity ||
-            properties.lat ||
-            properties.lon ||
-            properties.overall_height_above_ground ||
-            properties.county_display ||
-            properties.type_display
-        )
-    );
+    return popupHTML;
 };
-
-export { TowerProperties };

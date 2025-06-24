@@ -23,10 +23,8 @@ import {
     createZoomHintMessage
 } from '../../components/viewer/ZoomVisibilityManager';
 import '../../styles/standalone-viewer.css';
-import {
-    createTowerPopupHTML,
-    createBufferPopupHTML
-} from '../../components/viewer/EnhancedTowerPopupSystem';
+import { createTowerPopupHTML, isAntennaLayer } from '../../components/viewer/EnhancedTowerPopupSystem';
+
 
 // Fix Leaflet default icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -504,27 +502,15 @@ const StandaloneViewerPage: React.FC = () => {
                                 }
                             },
                             onEachFeature: (feature, leafletLayer) => {
-                                if (feature.properties) {
-                                    if (isTowerLayer) {
-                                        // Use enhanced tower popup for antenna towers
-                                        const companyName = getTowerCompanyFromLayerName(layerInfo.name);
-                                        const popupHTML = createTowerPopupHTML(feature.properties, companyName);
-                                        leafletLayer.bindPopup(popupHTML, {
-                                            maxWidth: 450,
-                                            maxHeight: 400,
-                                            className: 'tower-popup'
-                                        });
-                                    } else {
-                                        // Standard popup for other layers
-                                        let popupContent = '<div style="max-width: 300px;">';
-                                        for (const [key, value] of Object.entries(feature.properties)) {
-                                            if (value !== null && value !== undefined) {
-                                                popupContent += `<strong>${key}:</strong> ${value}<br>`;
-                                            }
-                                        }
-                                        popupContent += '</div>';
-                                        leafletLayer.bindPopup(popupContent);
-                                    }
+                                if (feature.properties && isTowerLayer) {
+                                    // Only add popups for tower layers
+                                    const companyName = getTowerCompanyFromLayerName(layerInfo.name);
+                                    const popupHTML = createTowerPopupHTML(feature.properties, companyName);
+                                    leafletLayer.bindPopup(popupHTML, {
+                                        maxWidth: 450,
+                                        maxHeight: 400,
+                                        className: 'tower-popup'
+                                    });
                                 }
                             }
                         }).addTo(clusterGroup);
@@ -569,15 +555,15 @@ const StandaloneViewerPage: React.FC = () => {
                                 }
                             },
                             onEachFeature: (feature, leafletLayer) => {
-                                if (feature.properties) {
-                                    let popupContent = '<div style="max-width: 300px;">';
-                                    for (const [key, value] of Object.entries(feature.properties)) {
-                                        if (value !== null && value !== undefined) {
-                                            popupContent += `<strong>${key}:</strong> ${value}<br>`;
-                                        }
-                                    }
-                                    popupContent += '</div>';
-                                    leafletLayer.bindPopup(popupContent);
+                                if (feature.properties && isTowerLayer) {
+                                    // Only add popups for tower layers
+                                    const companyName = getTowerCompanyFromLayerName(layerInfo.name);
+                                    const popupHTML = createTowerPopupHTML(feature.properties, companyName);
+                                    leafletLayer.bindPopup(popupHTML, {
+                                        maxWidth: 450,
+                                        maxHeight: 400,
+                                        className: 'tower-popup'
+                                    });
                                 }
                             }
                         });
