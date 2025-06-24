@@ -360,3 +360,28 @@
 .standalone-viewer-container [class*="copy-btn-"].copied {
     animation: copySuccess 0.3s ease-in-out;
 }
+
+/* County labels and CBRS popup styles */
+.county-label {
+    pointer-events: none !important;
+}
+
+.county-label div {
+    pointer-events: none !important;
+}
+
+.cbrs-popup .leaflet-popup-content-wrapper {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.cbrs-popup .leaflet-popup-content {
+    margin: 0;
+    padding: 0;
+}
+
+.cbrs-popup .leaflet-popup-tip {
+    background: white;
+}
+
