@@ -417,11 +417,13 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                                     <Collapse in={expandedGroups.has(group.id)}>
                                         <LayerGroupContent>
                                             {group.layers?.map((layer: any) => {
+                                                const isChecked = visibleLayers.has(layer.id);
+
                                                 const isTowerLayer = isAntennaTowerLayer(layer.name);
                                                 const towerRelationship = getTowerBufferRelationship(layer.id);
                                                 const layerVisible = visibleLayers.has(layer.id);
                                                 const zoomStatus = getLayerZoomStatus(layer.id);
-                                                const hiddenByZoom = isTowerLayer && !zoomStatus.canShow;
+                                                const hiddenByZoom = isChecked && isTowerLayer && !zoomStatus.canShow;
 
                                                 return (
                                                     <Box key={layer.id}>
@@ -437,7 +439,7 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                                                                         checked={layerVisible}
                                                                         onChange={() => onLayerToggle(layer.id)}
                                                                         size="small"
-                                                                        disabled={hiddenByZoom}
+                                                                        // ✅ NO disabled prop - users can always check/uncheck
                                                                     />
                                                                 }
                                                                 label={
@@ -445,8 +447,14 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                                                                         <Typography
                                                                             sx={{
                                                                                 fontSize: '13px',
-                                                                                color: hiddenByZoom ? '#ccc' : '#333',
-                                                                                textDecoration: hiddenByZoom ? 'line-through' : 'none'
+                                                                                // ✅ FIXED COLOR LOGIC: Normal color when checked, grey when unchecked
+                                                                                color: (isTowerLayer && isChecked && hiddenByZoom)
+                                                                                    ? '#999'        // Grey for zoom-restricted tower layers
+                                                                                    : isChecked
+                                                                                        ? '#333'    // Black for checked layers
+                                                                                        : '#333',   // Light grey for unchecked layers
+                                                                                // ✅ Italic style only for zoom-restricted towers
+                                                                                fontStyle: (isTowerLayer && isChecked && hiddenByZoom) ? 'italic' : 'normal'                                                                                // ✅ ADD ITALIC STYLE when hidden by zoom to show it's restricted
                                                                             }}
                                                                         >
                                                                             {layer.name}
@@ -465,7 +473,7 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                                                         </LayerItem>
 
                                                         {/* Zoom requirement message */}
-                                                        {isTowerLayer && hiddenByZoom && zoomStatus.needsZoom && (
+                                                        {isTowerLayer && isChecked && hiddenByZoom && zoomStatus.needsZoom && (
                                                             <ZoomRequirement>
                                                                 <ZoomInIcon sx={{ fontSize: '12px' }} />
                                                                 {formatZoomRequirement(zoomStatus.needsZoom)}
