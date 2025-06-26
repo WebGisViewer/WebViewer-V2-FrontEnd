@@ -787,19 +787,7 @@ const StandaloneViewerPage: React.FC = () => {
                 // Selected towers layer should always be visible if there are selected towers
                 if (layerId === -1) {
                     const shouldBeVisible = selectedTowers.length > 0 && visibleLayers.has(-1);
-                    const isCurrentlyVisible = mapRef.current!.hasLayer(layer);
-
-                    if (shouldBeVisible && !isCurrentlyVisible) {
-                        mapRef.current!.addLayer(layer);
-                        // ✅ Also enable buffer visibility for selected towers
-                        frontendBufferManager.toggleParentLayerBuffers(-1, true, mapRef.current!);
-                        console.log(`Showed Selected Towers layer with ${selectedTowers.length} towers`);
-                    } else if (!shouldBeVisible && isCurrentlyVisible) {
-                        mapRef.current!.removeLayer(layer);
-                        // ✅ Also disable buffer visibility for selected towers
-                        frontendBufferManager.toggleParentLayerBuffers(-1, false, mapRef.current!);
-                        console.log(`Hidden Selected Towers layer`);
-                    }
+                    selectedTowersManager.toggleSelectedLayerVisibility(shouldBeVisible);
                     continue;
                 }
 
@@ -848,10 +836,22 @@ const StandaloneViewerPage: React.FC = () => {
             try {
                 let data = null;
 
-                // Handle Selected Towers virtual layer
+                // Handle Selected Towers virtual layer using the manager's layer group
                 if (layerInfo.id === -1) {
-                    data = createSelectedTowersData(selectedTowers);
-                    console.log(`Creating virtual Selected Towers layer with ${selectedTowers.length} towers`);
+                    const virtual = selectedTowersManager.getSelectedTowersVirtualLayer();
+                    if (!virtual) {
+                        console.error('Selected towers layer not initialized');
+                        return;
+                    }
+                    const mapLayer = virtual.layerGroup;
+                    setPreloadedLayers(prev => ({
+                        ...prev,
+                        [-1]: mapLayer
+                    }));
+                    if (visibleLayers.has(-1) && mapRef.current) {
+                        mapRef.current.addLayer(mapLayer);
+                    }
+                    return;
                 } else {
                     // Try to get data from cache first, then fallback
                     const cachedData = layerDataCache.getLayerData(layerInfo.id);
@@ -1386,6 +1386,7 @@ const StandaloneViewerPage: React.FC = () => {
                                 }
                                 return newSet;
                             });
+                            selectedTowersManager.toggleSelectedLayerVisibility(isVisible);
                         }}
                     />
 
