@@ -1344,7 +1344,7 @@ const StandaloneViewerPage: React.FC = () => {
                         </Typography>
                         {zoomHints.map((hint, index) => (
                             <Typography key={index} variant="body2" sx={{ fontSize: '11px', marginTop: '2px' }}>
-                                {createZoomHintMessage(hint)}
+                                {createZoomHintMessage([hint])}  // ✅ Pass single hint as array
                             </Typography>
                         ))}
                     </Box>
