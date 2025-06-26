@@ -1356,39 +1356,32 @@ const StandaloneViewerPage: React.FC = () => {
                         projectData={projectData}
                         visibleLayers={visibleLayers}
                         activeBasemap={activeBasemap}
-                        onLayerToggle={handleLayerToggle} // ✅ Use the new handler
+                        onLayerToggle={handleLayerToggle}
                         onBasemapChange={setActiveBasemap}
                         towerBufferRelationships={towerBufferRelationships}
-                        onBufferToggle={(bufferId: string, isVisible: boolean) => {
-                            setBufferVisibility(prev => ({
-                                ...prev,
-                                [bufferId]: isVisible
-                            }));
-
-                            // Find the parent tower layer to check if it's visible
-                            const buffer = frontendBufferManager.getBufferLayer(bufferId);
-                            if (buffer && mapRef.current) {
-                                const parentVisible = visibleLayers.has(buffer.parentLayerId);
-                                frontendBufferManager.toggleBufferLayer(bufferId, isVisible, mapRef.current, parentVisible);
-                            }
-                        }}
+                        onBufferToggle={handleBufferToggle}
                         bufferVisibility={bufferVisibility}
                         zoomHints={zoomHints}
                         currentZoom={currentZoom}
-                        selectedTowersLayer={selectedTowers.length > 0 ? createSelectedTowersVirtualLayer(selectedTowers) : null}
-                        onSelectedTowersToggle={(isVisible: boolean) => {
-                            setVisibleLayers(prev => {
-                                const newSet = new Set(prev);
-                                if (isVisible) {
-                                    newSet.add(-1);
-                                } else {
+                        selectedTowersLayer={selectedTowers.length > 0 ? {
+                            id: -1,
+                            name: 'Selected Towers',
+                            is_visible: visibleLayers.has(-1),
+                            featureCount: selectedTowers.length
+                        } : null}
+                        onSelectedTowersToggle={(isVisible) => {
+                            if (isVisible) {
+                                setVisibleLayers(prev => new Set([...prev, -1]));
+                            } else {
+                                setVisibleLayers(prev => {
+                                    const newSet = new Set(prev);
                                     newSet.delete(-1);
-                                }
-                                return newSet;
-                            });
-                            selectedTowersManager.toggleSelectedLayerVisibility(isVisible);
+                                    return newSet;
+                                });
+                            }
                         }}
                     />
+
 
 
                 )}

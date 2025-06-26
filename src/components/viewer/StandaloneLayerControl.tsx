@@ -1,6 +1,6 @@
 // src/components/viewer/StandaloneLayerControl.tsx - With Zoom Level Feedback
 import React, { useState, useRef, useEffect } from 'react';
-import { Box, FormControlLabel, Checkbox, Radio, RadioGroup, Typography, IconButton, Collapse, Tooltip } from '@mui/material';
+import { Box, FormControlLabel, Checkbox, Radio, RadioGroup, Typography, IconButton, Collapse, Tooltip, Button } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -102,6 +102,51 @@ const SectionHeader = styled(Typography)({
     paddingBottom: '2px',
     '&:first-of-type': {
         marginTop: '0',
+    }
+});
+
+// New styled component for the Selected Towers section
+const SelectedTowersSection = styled(Box)({
+    backgroundColor: '#f8f9fa',
+    border: '1px solid #e9ecef',
+    borderRadius: '5px',
+    padding: '8px',
+    marginBottom: '12px',
+});
+
+const SelectedTowersHeader = styled(Box)({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '6px',
+});
+
+const SelectedTowersTitle = styled(Typography)({
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#495057',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+});
+
+const SelectedTowersCount = styled(Typography)({
+    fontSize: '11px',
+    color: '#6c757d',
+    fontStyle: 'italic',
+});
+
+const ExportButton = styled(Button)({
+    fontSize: '11px',
+    padding: '4px 12px',
+    minWidth: 'auto',
+    textTransform: 'none',
+    borderRadius: '3px',
+    '& .MuiButton-startIcon': {
+        marginRight: '4px',
+        '& svg': {
+            fontSize: '16px',
+        }
     }
 });
 
@@ -214,18 +259,18 @@ const ZoomStatus = styled(Box)({
 });
 
 const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
-    projectData,
-    visibleLayers,
-    activeBasemap,
-    onLayerToggle,
-    onBasemapChange,
-    towerBufferRelationships = [],
-    onBufferToggle,
-    bufferVisibility = {},
-    zoomHints = [],
-    currentZoom = 7,
-    selectedTowersLayer,
-    onSelectedTowersToggle}) => {
+                                                                           projectData,
+                                                                           visibleLayers,
+                                                                           activeBasemap,
+                                                                           onLayerToggle,
+                                                                           onBasemapChange,
+                                                                           towerBufferRelationships = [],
+                                                                           onBufferToggle,
+                                                                           bufferVisibility = {},
+                                                                           zoomHints = [],
+                                                                           currentZoom = 7,
+                                                                           selectedTowersLayer,
+                                                                           onSelectedTowersToggle}) => {
 
     const [isExpanded, setIsExpanded] = useState(false);
     const [isManuallyExpanded, setIsManuallyExpanded] = useState(false);
@@ -360,6 +405,11 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
         return `Zoom in ${zoomDiff} more level${zoomDiff !== 1 ? 's' : ''}`;
     };
 
+    // Get selected towers count
+    const getSelectedTowersCount = (): number => {
+        return selectedTowersManager.getSelectedTowers().length;
+    };
+
     // Cleanup on unmount
     useEffect(() => {
         return () => {
@@ -395,6 +445,56 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                         >
                             <CloseIcon />
                         </IconButton>
+                    )}
+
+                    {/* Selected Towers Section - NEW: Added at the top */}
+                    {getSelectedTowersCount() > 0 && (
+                        <SelectedTowersSection>
+                            <SelectedTowersHeader>
+                                <SelectedTowersTitle>
+                                    <ColorIndicator
+                                        layerColor="#FFD700"
+                                        layerType="Point Layer"
+                                    />
+                                    Selected Towers
+                                </SelectedTowersTitle>
+                                <ExportButton
+                                    variant="contained"
+                                    size="small"
+                                    startIcon={<GetAppIcon />}
+                                    onClick={handleExportSelectedTowers}
+                                    color="primary"
+                                >
+                                    Export
+                                </ExportButton>
+                            </SelectedTowersHeader>
+                            <SelectedTowersCount>
+                                {getSelectedTowersCount()} tower{getSelectedTowersCount() !== 1 ? 's' : ''} selected
+                            </SelectedTowersCount>
+                            {selectedTowersLayer && (
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={selectedTowersLayer.is_visible}
+                                            onChange={(e) => {
+                                                if (onSelectedTowersToggle) {
+                                                    onSelectedTowersToggle(e.target.checked);
+                                                }
+                                            }}
+                                            size="small"
+                                        />
+                                    }
+                                    label="Show on map"
+                                    sx={{
+                                        margin: '4px 0 0 0',
+                                        '& .MuiFormControlLabel-label': {
+                                            fontSize: '12px',
+                                            color: '#6c757d'
+                                        }
+                                    }}
+                                />
+                            )}
+                        </SelectedTowersSection>
                     )}
 
                     {/* Zoom status indicator */}
@@ -512,47 +612,6 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                                                             </ZoomRequirement>
                                                         )}
 
-                                                        {/* Selected Towers Layer - Add this AFTER the first antenna tower layer */}
-                                                        {isTowerLayer &&
-                                                            selectedTowersLayer &&
-                                                            selectedTowersLayer.featureCount > 0 &&
-                                                            group.layers?.findIndex((l: any) => isAntennaTowerLayer(l.name)) === group.layers?.indexOf(layer) && (
-                                                                <Box sx={{ marginTop: '4px', marginBottom: '4px' }}>
-                                                                <LayerItem sx={{ paddingLeft: '16px' }}>
-                                                                    <ColorIndicator
-                                                                        layerColor="#FFD700"
-                                                                        layerType="Point Layer"
-                                                                    />
-                                                                    <FormControlLabel
-                                                                        control={
-                                                                            <Checkbox
-                                                                                checked={selectedTowersLayer.is_visible}
-                                                                                onChange={(e) => {
-                                                                                    if (onSelectedTowersToggle) {
-                                                                                        onSelectedTowersToggle(e.target.checked);
-                                                                                    }
-                                                                                }}
-                                                                                size="small"
-                                                                            />
-                                                                        }
-                                                                        label={
-                                                                            <Typography
-                                                                                sx={{
-                                                                                    fontSize: '13px',
-                                                                                    color: '#333',
-                                                                                    fontWeight: selectedTowersLayer.is_visible ? 600 : 400,
-                                                                                    fontStyle: 'italic'
-                                                                                }}
-                                                                            >
-                                                                                {selectedTowersLayer.name} ({selectedTowersLayer.featureCount})
-                                                                            </Typography>
-                                                                        }
-                                                                        sx={{ margin: 0, flex: 1 }}
-                                                                    />
-                                                                </LayerItem>
-                                                            </Box>
-                                                        )}
-
                                                         {/* Buffer layers for antenna towers */}
                                                         {isTowerLayer && towerRelationship && layerVisible && !hiddenByZoom && (
                                                             <Box sx={{ marginTop: '4px', marginBottom: '8px' }}>
@@ -609,21 +668,9 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                         </>
                     )}
 
-                    {/* System statistics */}
-                    {(towerBufferRelationships.length > 0 || zoomHints.length > 0 || (selectedTowersLayer && selectedTowersLayer.featureCount > 0)) && (
+                    {/* System statistics - moved to bottom and simplified */}
+                    {(towerBufferRelationships.length > 0 || zoomHints.length > 0) && (
                         <Box sx={{ marginTop: '8px', padding: '4px', backgroundColor: '#f9f9f9', borderRadius: '3px' }}>
-                            {selectedTowersLayer && selectedTowersLayer.featureCount > 0 && (
-                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#666', flex: 1 }}>
-                                        Selected: {selectedTowersLayer.featureCount} tower{selectedTowersLayer.featureCount !== 1 ? 's' : ''}
-                                    </Typography>
-                                    <Tooltip title="Export selected towers">
-                                        <IconButton size="small" onClick={handleExportSelectedTowers}>
-                                            <GetAppIcon fontSize="small" />
-                                        </IconButton>
-                                    </Tooltip>
-                                </Box>
-                            )}
                             {towerBufferRelationships.length > 0 && (
                                 <Typography variant="caption" sx={{ fontSize: '10px', color: '#666', display: 'block' }}>
                                     Coverage: {towerBufferRelationships.length} tower group{towerBufferRelationships.length !== 1 ? 's' : ''}
