@@ -540,7 +540,6 @@ const StandaloneViewerPage: React.FC = () => {
             mapRef.current.remove();
         }
 
-
         try {
             const map = L.map(mapContainerRef.current, {
                 center: [
@@ -564,7 +563,6 @@ const StandaloneViewerPage: React.FC = () => {
             L.control.zoom({ position: 'bottomright' }).addTo(map);
 
             // Track zoom changes
-
             map.on('zoomend', () => {
                 const newZoom = map.getZoom();
                 setCurrentZoom(newZoom);
@@ -576,18 +574,24 @@ const StandaloneViewerPage: React.FC = () => {
                 }, 0);
             });
 
-
             mapRef.current = map;
             setCurrentZoom(map.getZoom());
 
             // Initialize zoom visibility manager
             zoomVisibilityManager.initialize(map, frontendBufferManager);
 
-            selectedTowersManager.initialize(map);
+            // ✅ FIX: Initialize tower popup handler FIRST
+            initializeTowerPopupHandler();
+
+            // ✅ FIX: Initialize selected towers manager with the correct map reference
+            selectedTowersManager.initialize(map); // Use 'map', not 'mapInstance'
             selectedTowersManager.onSelectionChange((towers: SelectedTower[]) => {
                 setSelectedTowers(towers);
                 console.log(`Selection changed: ${towers.length} towers selected`);
             });
+
+            // ✅ FIX: Make map globally available for popup handler
+            (window as any).currentMap = map;
 
             console.log('Map initialized with zoom visibility manager');
 
@@ -596,9 +600,12 @@ const StandaloneViewerPage: React.FC = () => {
             setError('Failed to initialize map');
         }
 
-        initializeTowerPopupHandler();
+        // ✅ REMOVE: These duplicate lines are causing the error
+        // initializeTowerPopupHandler();
+        // selectedTowersManager.initialize(mapInstance);
 
     }, [projectData, loading]);
+
 
     // Handle basemap changes
     useEffect(() => {

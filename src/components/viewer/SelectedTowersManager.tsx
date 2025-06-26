@@ -135,10 +135,9 @@ export class SelectedTowersManager {
         this.selectedTowersVirtualLayer.is_visible = isVisible;
 
         if (isVisible && this.selectedTowers.size > 0) {
-            // Ensure markers are created before adding to map
-            if (this.selectedLayerGroup.getLayers().length === 0) {
-                this.createAllSelectedTowerMarkers();
-            }
+            // ✅ FIX: Always recreate markers to ensure they appear
+            this.selectedLayerGroup.clearLayers();
+            this.createAllSelectedTowerMarkers();
 
             if (!this.mapRef.hasLayer(this.selectedLayerGroup)) {
                 this.mapRef.addLayer(this.selectedLayerGroup);
@@ -160,6 +159,27 @@ export class SelectedTowersManager {
         this.notifyLayerUpdate();
     }
 
+    // Add this cleanup method to the SelectedTowersManager class
+    cleanup() {
+        if (this.mapRef && this.selectedLayerGroup) {
+            // Remove from map
+            if (this.mapRef.hasLayer(this.selectedLayerGroup)) {
+                this.mapRef.removeLayer(this.selectedLayerGroup);
+            }
+
+            // Clean up buffers
+            frontendBufferManager.removeBuffersForTower(-1, this.mapRef);
+        }
+
+        // Clear all selections
+        this.selectedTowers.clear();
+        this.selectedLayerGroup = null;
+        this.mapRef = null;
+        this.selectedTowersVirtualLayer = null;
+
+        console.log('SelectedTowersManager cleaned up');
+    }
+
 
     clearAllSelections() {
         this.selectedTowers.clear();
@@ -173,7 +193,9 @@ export class SelectedTowersManager {
     private updateSelectedLayer() {
         if (!this.mapRef || !this.selectedLayerGroup || !this.selectedTowersVirtualLayer) return;
 
-        // Clear existing selected layer
+        console.log(`Updating selected layer. Count: ${this.selectedTowers.size}`);
+
+        // Clear existing selected layer completely
         this.selectedLayerGroup.clearLayers();
 
         // ✅ CRITICAL: Clean up old buffer layers for selected towers
@@ -183,6 +205,7 @@ export class SelectedTowersManager {
             // Remove from map if no towers selected
             if (this.mapRef.hasLayer(this.selectedLayerGroup)) {
                 this.mapRef.removeLayer(this.selectedLayerGroup);
+                console.log('Removed empty selected towers layer from map');
             }
             this.selectedTowersVirtualLayer.featureCount = 0;
             this.selectedTowersVirtualLayer.is_visible = false;
@@ -192,46 +215,77 @@ export class SelectedTowersManager {
         // Update feature count
         this.selectedTowersVirtualLayer.featureCount = this.selectedTowers.size;
 
-        // ✅ FIX: Only add to map if both conditions are met
-        const shouldBeVisible = this.selectedTowersVirtualLayer.is_visible && this.selectedTowers.size > 0;
-
-        if (shouldBeVisible && !this.mapRef.hasLayer(this.selectedLayerGroup)) {
-            this.mapRef.addLayer(this.selectedLayerGroup);
-        } else if (!shouldBeVisible && this.mapRef.hasLayer(this.selectedLayerGroup)) {
-            this.mapRef.removeLayer(this.selectedLayerGroup);
-        }
-
-        // ✅ FIX: Create all markers properly
+        // ✅ FIX: Always create markers when we have towers
         this.createAllSelectedTowerMarkers();
 
-        // Generate buffer layers for selected towers only if layer is visible
-        if (shouldBeVisible) {
+        // ✅ FIX: Auto-enable visibility when first tower is selected
+        if (!this.selectedTowersVirtualLayer.is_visible) {
+            this.selectedTowersVirtualLayer.is_visible = true;
+            console.log('Auto-enabled selected towers layer visibility');
+        }
+
+        // Add layer to map if visible and has towers
+        if (this.selectedTowersVirtualLayer.is_visible && !this.mapRef.hasLayer(this.selectedLayerGroup)) {
+            this.mapRef.addLayer(this.selectedLayerGroup);
+            console.log(`Added selected towers layer to map with ${this.selectedTowers.size} towers`);
+        }
+
+        // Generate buffers if layer is visible
+        if (this.selectedTowersVirtualLayer.is_visible) {
             this.generateSelectedTowerBuffers();
         }
     }
 
+
     private createAllSelectedTowerMarkers() {
-        if (!this.selectedLayerGroup) return;
+        if (!this.selectedLayerGroup) {
+            console.error('No selected layer group available');
+            return;
+        }
 
         const selectedTowersArray = Array.from(this.selectedTowers.values());
+        console.log(`Creating ${selectedTowersArray.length} selected tower markers`);
 
         selectedTowersArray.forEach((tower, index) => {
-            const marker = this.createSelectedTowerMarker(tower, index);
-            if (marker) {
-                this.selectedLayerGroup!.addLayer(marker);
+            try {
+                const marker = this.createSelectedTowerMarker(tower, index);
+                if (marker) {
+                    this.selectedLayerGroup!.addLayer(marker);
+                    console.log(`Added marker ${index + 1}/${selectedTowersArray.length} for tower ${tower.id}`);
+                } else {
+                    console.error(`Failed to create marker for tower ${tower.id}`);
+                }
+            } catch (error) {
+                console.error(`Error creating marker for tower ${tower.id}:`, error);
             }
         });
+
+        console.log(`Selected layer group now has ${this.selectedLayerGroup.getLayers().length} markers`);
     }
+
 
 // ✅ NEW: Create individual marker with proper styling
     private createSelectedTowerMarker(tower: SelectedTower, index: number): L.Marker | null {
         try {
+            // Validate coordinates
+            if (!tower.coordinates || tower.coordinates.length !== 2) {
+                console.error('Invalid coordinates for tower:', tower);
+                return null;
+            }
+
+            const [lat, lng] = tower.coordinates;
+            if (isNaN(lat) || isNaN(lng)) {
+                console.error('NaN coordinates for tower:', tower);
+                return null;
+            }
+
             const icon = this.createSelectedTowerIcon();
 
-            const marker = L.marker(tower.coordinates, {
+            const marker = L.marker([lat, lng], {
                 icon,
-                // Add unique identifier for debugging
-                alt: `selected-tower-${tower.id}-${index}`
+                alt: `selected-tower-${tower.id}-${index}`,
+                // Add z-index to ensure visibility
+                zIndexOffset: 1000
             });
 
             // Add popup with tower information
@@ -245,12 +299,14 @@ export class SelectedTowersManager {
 
             marker.bindPopup(popupContent);
 
+            console.log(`Created marker for tower ${tower.id} at [${lat}, ${lng}]`);
             return marker;
         } catch (error) {
             console.error('Error creating selected tower marker:', error);
             return null;
         }
     }
+
 
 
     private createSelectedTowerIcon(): L.DivIcon {

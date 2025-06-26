@@ -232,60 +232,93 @@ export const initializeTowerPopupHandler = () => {
 };
 
 // Handle copy action
+// const handleCopyAction = (towerId: string) => {
+//     const table = document.querySelector('.tower-table');
+//     if (!table) return;
+//
+//     let textContent = 'FCC Tower Information\n\n';
+//     const rows = table.querySelectorAll('tr');
+//
+//     rows.forEach(row => {
+//         const cells = row.querySelectorAll('td');
+//         if (cells.length >= 2) {
+//             const label = cells[0].textContent?.trim() || '';
+//             const value = cells[1].textContent?.trim() || '';
+//             textContent += label + ': ' + value + '\n';
+//         }
+//     });
+//
+//     // Try to copy to clipboard
+//     if (navigator.clipboard && navigator.clipboard.writeText) {
+//         navigator.clipboard.writeText(textContent).then(() => {
+//             const btn = document.querySelector('.copy-btn') as HTMLButtonElement;
+//             if (btn) {
+//                 const originalText = btn.textContent;
+//                 btn.textContent = 'Copied!';
+//                 setTimeout(() => {
+//                     btn.textContent = originalText;
+//                 }, 2000);
+//             }
+//         }).catch(err => {
+//             console.error('Failed to copy:', err);
+//             fallbackCopy(textContent);
+//         });
+//     } else {
+//         fallbackCopy(textContent);
+//     }
+// };
 const handleCopyAction = (towerId: string) => {
-    const table = document.querySelector('.tower-table');
-    if (!table) return;
-
-    let textContent = 'FCC Tower Information\n\n';
-    const rows = table.querySelectorAll('tr');
-
-    rows.forEach(row => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length >= 2) {
-            const label = cells[0].textContent?.trim() || '';
-            const value = cells[1].textContent?.trim() || '';
-            textContent += label + ': ' + value + '\n';
-        }
-    });
-
-    // Try to copy to clipboard
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(textContent).then(() => {
-            const btn = document.querySelector('.copy-btn') as HTMLButtonElement;
-            if (btn) {
-                const originalText = btn.textContent;
-                btn.textContent = 'Copied!';
-                setTimeout(() => {
-                    btn.textContent = originalText;
-                }, 2000);
-            }
-        }).catch(err => {
-            console.error('Failed to copy:', err);
-            fallbackCopy(textContent);
-        });
-    } else {
-        fallbackCopy(textContent);
+    const towerData = towerDataStore.get(towerId);
+    if (!towerData) {
+        console.error('No tower data found for ID:', towerId);
+        return;
     }
+
+    const copyText = `Tower Information:
+Latitude: ${towerData.lat || 'N/A'}
+Longitude: ${towerData.lon || 'N/A'}
+County: ${towerData.county_display || towerData.county_name || 'N/A'}
+Height: ${towerData.overall_height_above_ground || 'N/A'}m
+Type: ${towerData.type_display || towerData.english_type || 'N/A'}
+Owner: ${towerData.entity || 'N/A'}`;
+
+    navigator.clipboard.writeText(copyText).then(() => {
+        console.log('Tower data copied to clipboard');
+        // Could add a toast notification here
+    }).catch(err => {
+        console.error('Failed to copy tower data:', err);
+    });
 };
+
 
 // Handle toggle selection action
 const handleToggleAction = (towerId: string, layerName?: string, companyName?: string, layerId?: number) => {
-    const manager = window.selectedTowersManager;
-    if (!manager) {
-        console.error('Selected towers manager not available');
-        return;
-    }
-
-    // Get tower data from store
     const towerData = towerDataStore.get(towerId);
     if (!towerData) {
-        console.error('Tower data not found for:', towerId);
+        console.error('No tower data found for ID:', towerId);
         return;
     }
 
-    const coordinates = [towerData.lat, towerData.lon];
+    // Get selected towers manager from global scope
+    const manager = (window as any).selectedTowersManager;
+    if (!manager) {
+        console.error('SelectedTowersManager not found on window object');
+        return;
+    }
 
-    const isNowSelected = manager.toggleTower(
+    // Extract coordinates from tower data
+    const lat = parseFloat(towerData.lat?.toString() || '0');
+    const lng = parseFloat(towerData.lon?.toString() || '0');
+
+    if (lat === 0 || lng === 0) {
+        console.error('Invalid coordinates for tower:', towerData);
+        return;
+    }
+
+    const coordinates: [number, number] = [lat, lng];
+
+    // Toggle tower selection
+    const isSelected = manager.toggleTower(
         towerId,
         towerData,
         coordinates,
@@ -294,22 +327,10 @@ const handleToggleAction = (towerId: string, layerName?: string, companyName?: s
         layerId || 0
     );
 
-    // Update button appearance
-    const btn = document.querySelector('.select-btn') as HTMLButtonElement;
-    if (btn) {
-        if (isNowSelected) {
-            btn.textContent = 'Selected ✓';
-            btn.style.backgroundColor = '#FFD700';
-            btn.style.color = '#333';
-        } else {
-            btn.textContent = 'Select';
-            btn.style.backgroundColor = '#2196F3';
-            btn.style.color = 'white';
-        }
-    }
-
-    console.log('Tower ' + towerId + (isNowSelected ? ' selected' : ' unselected'));
+    console.log(`Tower ${towerId} ${isSelected ? 'selected' : 'unselected'}`);
 };
+
+
 
 // Fallback copy method
 const fallbackCopy = (textContent: string) => {
