@@ -278,11 +278,21 @@ export const isAntennaTowerLayer = (layerName: string): boolean => {
 };
 
 export const getTowerCompanyFromLayerName = (layerName: string): string => {
-    if (layerName.includes('American Towers')) return 'American Towers';
-    if (layerName.includes('SBA')) return 'SBA';
-    if (layerName.includes('Crown Castle')) return 'Crown Castle';
-    return 'Other';
+    const lowerName = layerName.toLowerCase();
+
+    if (lowerName.includes('american tower')) return 'American Towers';
+    if (lowerName.includes('sba')) return 'SBA';
+    if (lowerName.includes('crown castle')) return 'Crown Castle';
+    if (lowerName.includes('other')) return 'Other';
+
+    // Default fallback
+    return 'FCC Tower';
 };
+
+export const getTowerCompanyColor = (companyName: string): string => {
+    return towerCompanyColors[companyName as keyof typeof towerCompanyColors] || towerCompanyColors['Other'];
+};
+
 
 // Buffer visibility state management
 export interface BufferVisibilityState {

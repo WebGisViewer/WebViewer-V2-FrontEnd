@@ -1,5 +1,5 @@
+
 // src/components/viewer/EnhancedTowerPopupSystem.tsx
-// Enhanced Tower Popup System to match V1 styling
 
 interface TowerProperties {
     lat?: string | number;
@@ -13,13 +13,43 @@ interface TowerProperties {
     english_type?: string;
     structure_type?: string;
     entity?: string;
-    [key: string]: any;
+    [key: string]: string | number | boolean | null | undefined;
+}
+
+interface BufferProperties {
+    tower_id?: string | number;
+    tower_name?: string;
+    company?: string;
+    radius?: string | number;
+    tower_height?: string | number;
+    lat?: string | number;
+    lon?: string | number;
+    [key: string]: string | number | boolean | null | undefined;
+}
+
+// Global storage for tower data to avoid embedding large objects in onclick
+let towerDataStore: Map<string, any> = new Map();
+
+// Global popup handler - single function for all popups
+declare global {
+    interface Window {
+        handleTowerPopupAction: (action: string, towerId: string, layerName?: string, companyName?: string, layerId?: number) => void;
+    }
 }
 
 // Create styled popup HTML for antenna towers
-export const createTowerPopupHTML = (properties: TowerProperties, companyName: string): string => {
-    // Generate unique ID for this popup instance
-    const popupId = `tower-popup-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+export const createTowerPopupHTML = (
+    properties: TowerProperties,
+    companyName?: string,
+    layerName?: string,
+    layerId?: number,
+    isSelected?: boolean
+): string => {
+    // Create tower ID for selection management
+    const towerId = `tower_${properties.lat}_${properties.lon}`;
+
+    // Store tower data globally to avoid embedding in onclick
+    towerDataStore.set(towerId, properties);
 
     // Format county display
     const formatCountyDisplay = (): string => {
@@ -51,22 +81,33 @@ export const createTowerPopupHTML = (properties: TowerProperties, companyName: s
     };
 
     // Safe value formatter
-    const safeValue = (val: any, defaultVal: string = 'N/A'): string => {
+    const safeValue = (val: string | number | boolean | null | undefined, defaultVal: string = 'N/A'): string => {
         if (val === null || val === undefined || val === '') {
             return defaultVal;
         }
         return val.toString();
     };
 
+    // Determine if this tower can be selected (not for selected towers layer)
+    const canSelect = layerId !== -1 && !isSelected;
+    const currentlySelected = isSelected || false;
+
+    // Escape strings for HTML/JavaScript
+    const escapeHtml = (str: string): string => {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    };
+
     const popupHTML = `
         <style>
-        .popup-container-${popupId} {
+        .popup-container {
             font-family: Arial, sans-serif;
             max-width: 400px;
             position: relative;
         }
         
-        .copy-btn-${popupId} {
+        .copy-btn {
             position: absolute;
             top: 5px;
             right: 5px;
@@ -81,43 +122,62 @@ export const createTowerPopupHTML = (properties: TowerProperties, companyName: s
             z-index: 1000;
         }
         
-        .copy-btn-${popupId}:hover {
+        .copy-btn:hover {
             background-color: #45a049;
         }
+
+        .select-btn {
+            position: absolute;
+            top: 5px;
+            right: ${canSelect ? '60px' : '5px'};
+            background-color: ${currentlySelected ? '#FFD700' : '#2196F3'};
+            color: ${currentlySelected ? '#333' : 'white'};
+            border: none;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            z-index: 1000;
+        }
         
-        .tower-table-${popupId} {
+        .select-btn:hover {
+            background-color: ${currentlySelected ? '#FFC107' : '#1976D2'};
+        }
+        
+        .tower-table {
             width: 100%;
             border-collapse: collapse;
             font-family: Arial, sans-serif;
             margin-top: 20px;
         }
         
-        .tower-table-${popupId} th, .tower-table-${popupId} td {
+        .tower-table th, .tower-table td {
             border: 1px solid #ddd;
             padding: 10px;
             text-align: left;
             min-width: 120px;
         }
         
-        .tower-table-${popupId} th {
+        .tower-table th {
             background-color: #2196F3;
             color: white;
             font-weight: bold;
         }
         
-        .tower-table-${popupId} tr:nth-child(even) {
+        .tower-table tr:nth-child(even) {
             background-color: #f2f2f2;
         }
         
-        .tower-table-${popupId} tr:hover {
+        .tower-table tr:hover {
             background-color: #ddd;
         }
         
-        .tower-table-${popupId} td {
+        .tower-table td {
             font-weight: normal;
         }
         
-        .popup-header-${popupId} {
+        .popup-header {
             font-weight: bold;
             font-size: 14px;
             color: #333;
@@ -125,92 +185,148 @@ export const createTowerPopupHTML = (properties: TowerProperties, companyName: s
         }
         </style>
 
-        <div class="popup-container-${popupId}">
-            <button class="copy-btn-${popupId}" onclick="copyTowerTableContent_${popupId}()">Copy</button>
-            <div class="popup-header-${popupId}">FCC Tower Information</div>
-            <table class='tower-table tower-table-${popupId}'>
+        <div class="popup-container">
+            ${canSelect ? `<button class="copy-btn" onclick="window.handleTowerPopupAction('copy', '${escapeHtml(towerId)}')">Copy</button>` : ''}
+            ${canSelect ? `<button class="select-btn" onclick="window.handleTowerPopupAction('toggle', '${escapeHtml(towerId)}', '${escapeHtml(layerName || 'Unknown Layer')}', '${escapeHtml(companyName || 'Unknown Company')}', ${layerId || 0})">${currentlySelected ? 'Unselect' : 'Select'}</button>` : ''}
+            ${!canSelect && !currentlySelected ? `<button class="copy-btn" onclick="window.handleTowerPopupAction('copy', '${escapeHtml(towerId)}')">Copy</button>` : ''}
+            ${currentlySelected ? `<button class="select-btn" onclick="window.handleTowerPopupAction('toggle', '${escapeHtml(towerId)}', '${escapeHtml(layerName || 'Unknown Layer')}', '${escapeHtml(companyName || 'Unknown Company')}', ${layerId || 0})">Selected ✓</button>` : ''}
+            
+            <div class="popup-header">
+                ${layerName === 'Selected Towers' ? 'Selected ' : ''}FCC Tower Information
+            </div>
+            
+            <table class='tower-table'>
                 <tr><td><b>Latitude</b></td><td>${safeValue(properties.lat)}</td></tr>
                 <tr><td><b>Longitude</b></td><td>${safeValue(properties.lon)}</td></tr>
                 <tr><td><b>County Name</b></td><td>${formatCountyDisplay()}</td></tr>
                 <tr><td><b>Overall Height Above Ground (Meters)</b></td><td>${safeValue(properties.overall_height_above_ground)}</td></tr>
                 <tr><td><b>Type</b></td><td>${formatTypeDisplay()}</td></tr>
                 <tr><td><b>Owner</b></td><td>${safeValue(properties.entity)}</td></tr>
+                ${companyName ? `<tr><td><b>Company</b></td><td>${companyName}</td></tr>` : ''}
+                ${layerName ? `<tr><td><b>Layer</b></td><td>${layerName}</td></tr>` : ''}
             </table>
         </div>
-
-        <script>
-        function copyTowerTableContent_${popupId}() {
-            const table = document.querySelector('.tower-table-${popupId}');
-            if (!table) return;
-            
-            let textContent = 'FCC Tower Information\\n\\n';
-            const rows = table.querySelectorAll('tr');
-            
-            rows.forEach(row => {
-                const cells = row.querySelectorAll('td');
-                if (cells.length >= 2) {
-                    const label = cells[0].textContent.trim();
-                    const value = cells[1].textContent.trim();
-                    textContent += label + ': ' + value + '\\n';
-                }
-            });
-            
-            // Try to copy to clipboard
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(textContent).then(() => {
-                    // Visual feedback
-                    const btn = document.querySelector('.copy-btn-${popupId}');
-                    if (btn) {
-                        const originalText = btn.textContent;
-                        btn.textContent = 'Copied!';
-                        btn.style.backgroundColor = '#4CAF50';
-                        
-                        setTimeout(() => {
-                            btn.textContent = originalText;
-                            btn.style.backgroundColor = '#4CAF50';
-                        }, 2000);
-                    }
-                }).catch(err => {
-                    console.error('Failed to copy:', err);
-                    // Fallback to selection method
-                    fallbackCopyMethod_${popupId}();
-                });
-            } else {
-                // Fallback for older browsers
-                fallbackCopyMethod_${popupId}();
-            }
-        }
-        
-        function fallbackCopyMethod_${popupId}() {
-            const table = document.querySelector('.tower-table-${popupId}');
-            if (!table) return;
-            
-            const range = document.createRange();
-            range.selectNode(table);
-            
-            const selection = window.getSelection();
-            selection.removeAllRanges();
-            selection.addRange(range);
-            
-            try {
-                document.execCommand('copy');
-                const btn = document.querySelector('.copy-btn-${popupId}');
-                if (btn) {
-                    btn.textContent = 'Copied!';
-                    setTimeout(() => {
-                        btn.textContent = 'Copy';
-                    }, 2000);
-                }
-            } catch (err) {
-                console.error('Fallback copy failed:', err);
-            }
-            
-            selection.removeAllRanges();
-        }
-        </script>
     `;
 
     return popupHTML;
+};
+
+// Initialize the global popup handler
+export const initializeTowerPopupHandler = () => {
+    window.handleTowerPopupAction = (action: string, towerId: string, layerName?: string, companyName?: string, layerId?: number) => {
+        try {
+            if (action === 'copy') {
+                handleCopyAction(towerId);
+            } else if (action === 'toggle') {
+                handleToggleAction(towerId, layerName, companyName, layerId);
+            }
+        } catch (error) {
+            console.error('Error handling popup action:', error);
+        }
+    };
+};
+
+// Handle copy action
+const handleCopyAction = (towerId: string) => {
+    const table = document.querySelector('.tower-table');
+    if (!table) return;
+
+    let textContent = 'FCC Tower Information\n\n';
+    const rows = table.querySelectorAll('tr');
+
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length >= 2) {
+            const label = cells[0].textContent?.trim() || '';
+            const value = cells[1].textContent?.trim() || '';
+            textContent += label + ': ' + value + '\n';
+        }
+    });
+
+    // Try to copy to clipboard
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(textContent).then(() => {
+            const btn = document.querySelector('.copy-btn') as HTMLButtonElement;
+            if (btn) {
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            }
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+            fallbackCopy(textContent);
+        });
+    } else {
+        fallbackCopy(textContent);
+    }
+};
+
+// Handle toggle selection action
+const handleToggleAction = (towerId: string, layerName?: string, companyName?: string, layerId?: number) => {
+    const manager = window.selectedTowersManager;
+    if (!manager) {
+        console.error('Selected towers manager not available');
+        return;
+    }
+
+    // Get tower data from store
+    const towerData = towerDataStore.get(towerId);
+    if (!towerData) {
+        console.error('Tower data not found for:', towerId);
+        return;
+    }
+
+    const coordinates = [towerData.lat, towerData.lon];
+
+    const isNowSelected = manager.toggleTower(
+        towerId,
+        towerData,
+        coordinates,
+        layerName || 'Unknown Layer',
+        companyName || 'Unknown Company',
+        layerId || 0
+    );
+
+    // Update button appearance
+    const btn = document.querySelector('.select-btn') as HTMLButtonElement;
+    if (btn) {
+        if (isNowSelected) {
+            btn.textContent = 'Selected ✓';
+            btn.style.backgroundColor = '#FFD700';
+            btn.style.color = '#333';
+        } else {
+            btn.textContent = 'Select';
+            btn.style.backgroundColor = '#2196F3';
+            btn.style.color = 'white';
+        }
+    }
+
+    console.log('Tower ' + towerId + (isNowSelected ? ' selected' : ' unselected'));
+};
+
+// Fallback copy method
+const fallbackCopy = (textContent: string) => {
+    const textArea = document.createElement('textarea');
+    textArea.value = textContent;
+    document.body.appendChild(textArea);
+    textArea.select();
+
+    try {
+        document.execCommand('copy');
+        const btn = document.querySelector('.copy-btn') as HTMLButtonElement;
+        if (btn) {
+            btn.textContent = 'Copied!';
+            setTimeout(() => {
+                btn.textContent = 'Copy';
+            }, 2000);
+        }
+    } catch (err) {
+        console.error('Fallback copy failed:', err);
+    }
+
+    document.body.removeChild(textArea);
 };
 
 // Helper function to determine if a layer is an antenna/tower layer
@@ -234,11 +350,12 @@ export const getTowerCompanyFromLayerName = (layerName: string): string => {
 };
 
 // Create styled popup HTML for antenna buffers
-export const createBufferPopupHTML = (properties: any, bufferType: string): string => {
-    // Generate unique ID for this popup instance
-    const popupId = `buffer-popup-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    const safeValue = (val: any, defaultVal: string = 'N/A'): string => {
+export const createBufferPopupHTML = (
+    properties: BufferProperties,
+    distance: number,
+    companyName: string
+): string => {
+    const safeValue = (val: string | number | boolean | null | undefined, defaultVal: string = 'N/A'): string => {
         if (val === null || val === undefined || val === '') {
             return defaultVal;
         }
@@ -247,67 +364,72 @@ export const createBufferPopupHTML = (properties: any, bufferType: string): stri
 
     const popupHTML = `
         <style>
-        .popup-container-${popupId} {
+        .buffer-popup-container {
             font-family: Arial, sans-serif;
             max-width: 350px;
             position: relative;
         }
         
-        .buffer-table-${popupId} {
+        .buffer-table {
             width: 100%;
             border-collapse: collapse;
             font-family: Arial, sans-serif;
             margin-top: 10px;
         }
         
-        .buffer-table-${popupId} td {
+        .buffer-table td {
             border: 1px solid #ddd;
             padding: 8px;
             text-align: left;
         }
         
-        .buffer-table-${popupId} td:first-child {
+        .buffer-table td:first-child {
             background-color: #f5f5f5;
             font-weight: bold;
             min-width: 120px;
         }
         
-        .buffer-table-${popupId} tr:hover {
+        .buffer-table tr:hover {
             background-color: #f9f9f9;
         }
         
-        .popup-header-${popupId} {
+        .buffer-popup-header {
             font-weight: bold;
             font-size: 14px;
             color: #333;
             margin-bottom: 5px;
         }
         
-        .buffer-type-${popupId} {
+        .buffer-type {
             background-color: #e3f2fd;
-            color: #1976d2;
             padding: 4px 8px;
             border-radius: 4px;
             font-size: 12px;
-            font-weight: bold;
-            display: inline-block;
             margin-bottom: 8px;
+            text-align: center;
+            font-weight: bold;
         }
         </style>
 
-        <div class="popup-container-${popupId}">
-            <div class="popup-header-${popupId}">Tower Coverage Area</div>
-            <div class="buffer-type-${popupId}">${bufferType}</div>
-            <table class='buffer-table-${popupId}'>
-                <tr><td>Tower ID</td><td>${safeValue(properties.tower_id)}</td></tr>
-                <tr><td>Tower Name</td><td>${safeValue(properties.tower_name)}</td></tr>
-                <tr><td>Company</td><td>${safeValue(properties.company)}</td></tr>
-                <tr><td>Coverage Radius</td><td>${safeValue(properties.radius)} km</td></tr>
-                <tr><td>Tower Height</td><td>${safeValue(properties.tower_height)} m</td></tr>
-                <tr><td>Location</td><td>${safeValue(properties.lat)}, ${safeValue(properties.lon)}</td></tr>
+        <div class="buffer-popup-container">
+            <div class="buffer-popup-header">Coverage Area</div>
+            <div class="buffer-type">${distance} Mile ${companyName} Buffer</div>
+            <table class='buffer-table'>
+                <tr><td><b>Tower ID</b></td><td>${safeValue(properties.tower_id)}</td></tr>
+                <tr><td><b>Tower Name</b></td><td>${safeValue(properties.tower_name)}</td></tr>
+                <tr><td><b>Company</b></td><td>${companyName}</td></tr>
+                <tr><td><b>Buffer Distance</b></td><td>${distance} miles</td></tr>
+                <tr><td><b>Tower Height</b></td><td>${safeValue(properties.tower_height)} meters</td></tr>
+                <tr><td><b>Latitude</b></td><td>${safeValue(properties.lat)}</td></tr>
+                <tr><td><b>Longitude</b></td><td>${safeValue(properties.lon)}</td></tr>
             </table>
         </div>
     `;
 
     return popupHTML;
+};
+
+// Clear tower data store (call this when needed to prevent memory leaks)
+export const clearTowerDataStore = () => {
+    towerDataStore.clear();
 };

@@ -1,8 +1,7 @@
 // src/pages/viewer/StandaloneViewerPage.tsx
-
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { Box, CircularProgress, Typography, Paper, Button } from '@mui/material';
+import { Box, Typography, Paper } from '@mui/material';
 import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
@@ -29,6 +28,9 @@ import { cbrsService, CBRSLicense } from '../../services/cbrsService';
 import { createCBRSPopupHTML } from '../../components/viewer/CBRSPopupSystem';
 import * as turf from '@turf/turf';
 import { layerDataCache } from '../../utils/LayerDataCache';
+import { selectedTowersManager, SelectedTower } from '../../components/viewer/SelectedTowersManager';
+import { towerCompanyColors } from '../../constants/towerConstants';
+import { initializeTowerPopupHandler } from '../../components/viewer/EnhancedTowerPopupSystem';
 
 
 // Fix Leaflet default icon issue
@@ -107,14 +109,6 @@ const createWiFiTowerSVG = (color: string, size: number = 32): string => {
     `;
 };
 
-// Tower company colors matching the upload pipeline
-const towerCompanyColors = {
-    'American Towers': '#dc3545', // red
-    'SBA': '#6f42c1', // purple
-    'Crown Castle': '#fd7e14', // orange
-    'Other': '#0d6efd' // blue
-};
-
 // Helper functions
 const hasClusteringEnabled = (layer: StandaloneLayer): boolean => {
     return !!(
@@ -161,96 +155,6 @@ const createTowerIcon = (companyName: string): L.DivIcon => {
     });
 };
 
-const DebugCacheInfo: React.FC = () => {
-    const [cacheInfo, setCacheInfo] = useState<any>(null);
-    const [showDebug, setShowDebug] = useState(false);
-
-    useEffect(() => {
-        if (showDebug) {
-            const updateCacheInfo = () => {
-                const info = layerDataCache.getCacheInfo();
-                setCacheInfo(info);
-            };
-
-            updateCacheInfo();
-            const interval = setInterval(updateCacheInfo, 2000);
-
-            return () => clearInterval(interval);
-        }
-    }, [showDebug]);
-
-    // Only show in development
-    if (process.env.NODE_ENV !== 'development') return null;
-
-    return (
-        <>
-            <Button
-                onClick={() => setShowDebug(!showDebug)}
-                sx={{
-                    position: 'fixed',
-                    top: '60px',
-                    right: '10px',
-                    zIndex: 1001,
-                    minWidth: 'auto',
-                    p: 1
-                }}
-                variant="outlined"
-                size="small"
-            >
-                {showDebug ? 'Hide' : 'Show'} Cache Debug
-            </Button>
-
-            {showDebug && cacheInfo && (
-                <Paper
-                    sx={{
-                        position: 'fixed',
-                        top: '100px',
-                        right: '10px',
-                        zIndex: 1001,
-                        p: 2,
-                        maxWidth: 300,
-                        fontSize: '12px',
-                        maxHeight: 400,
-                        overflow: 'auto'
-                    }}
-                >
-                    <Typography variant="subtitle2" gutterBottom>
-                        Cache Status
-                    </Typography>
-                    <div><strong>Memory Entries:</strong> {cacheInfo.memoryEntries}</div>
-                    <div><strong>Storage Entries:</strong> {cacheInfo.localStorageEntries}</div>
-                    <div><strong>Memory Size:</strong> {cacheInfo.memorySize}</div>
-                    <div><strong>Storage Size:</strong> {cacheInfo.storageSize}</div>
-                    <div><strong>Storage Usage:</strong> {cacheInfo.storageUsage}</div>
-                    <div><strong>Total Size:</strong> {cacheInfo.totalSize}</div>
-
-                    <div style={{ marginTop: '12px', fontSize: '11px', color: '#666' }}>
-                        <div>Fallback Data: {Object.keys(fallbackLayerData).length} layers</div>
-                        <div>Preloaded Layers: {Object.keys(preloadedLayers).length} layers</div>
-                        <div>Visible Layers: {visibleLayers.size} layers</div>
-                    </div>
-
-                    <Button
-                        onClick={() => {
-                            layerDataCache.clearAllCache();
-                            console.log('Cache cleared manually');
-                        }}
-                        sx={{
-                            mt: 1,
-                            fontSize: '11px',
-                            width: '100%'
-                        }}
-                        variant="outlined"
-                        color="error"
-                        size="small"
-                    >
-                        Clear All Cache
-                    </Button>
-                </Paper>
-            )}
-        </>
-    );
-};
 
 const StandaloneViewerPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -283,6 +187,46 @@ const StandaloneViewerPage: React.FC = () => {
     const [preloadedLayers, setPreloadedLayers] = useState<{ [layerId: number]: L.Layer }>({});
 
     const [fallbackLayerData, setFallbackLayerData] = useState<{ [layerId: number]: any }>({});
+
+    const [selectedTowers, setSelectedTowers] = useState<SelectedTower[]>([]);
+
+    const createSelectedTowersVirtualLayer = (selectedTowers: SelectedTower[]): StandaloneLayer => {
+        return {
+            id: -1, // Virtual layer ID
+            name: 'Selected Towers',
+            layer_type_name: 'Point Layer',
+            type: 'Point',
+            is_visible: true,
+            is_visible_by_default: false,
+            z_index: 999, // High z-index to appear on top
+            style: {
+                color: towerCompanyColors['Selected'],
+                fillColor: towerCompanyColors['Selected']
+            },
+            enable_clustering: true,
+            clustering_options: {
+                disableClusteringAtZoom: 11,
+                showCoverageOnHover: false,
+                zoomToBoundsOnClick: true,
+                spiderfyOnMaxZoom: true
+            }
+        };
+    };
+
+// Add this function to create selected towers GeoJSON data
+    const createSelectedTowersData = (selectedTowers: SelectedTower[]) => {
+        return {
+            type: 'FeatureCollection' as const,
+            features: selectedTowers.map(tower => ({
+                type: 'Feature' as const,
+                geometry: {
+                    type: 'Point' as const,
+                    coordinates: [tower.coordinates[1], tower.coordinates[0]] // [lng, lat]
+                },
+                properties: tower.data
+            }))
+        };
+    };
 
     // Inject tower icon CSS
     useEffect(() => {
@@ -357,6 +301,29 @@ const StandaloneViewerPage: React.FC = () => {
             zoomVisibilityManager.offZoomHints(handleZoomHints);
         };
     }, []);
+
+    useEffect(() => {
+        if (selectedTowers.length > 0) {
+            // Auto-enable the Selected Towers layer when towers are selected
+            setVisibleLayers(prev => new Set([...prev, -1]));
+        } else {
+            // Auto-disable the Selected Towers layer when no towers are selected
+            setVisibleLayers(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(-1);
+                return newSet;
+            });
+
+            // Clean up the selected towers layer from preloaded layers
+            setPreloadedLayers(prev => {
+                const newLayers = { ...prev };
+                if (newLayers[-1]) {
+                    delete newLayers[-1];
+                }
+                return newLayers;
+            });
+        }
+    }, [selectedTowers]);
 
     // Load project data
     useEffect(() => {
@@ -550,8 +517,10 @@ const StandaloneViewerPage: React.FC = () => {
         if (mapRef.current) {
             frontendBufferManager.cleanup(mapRef.current);
             zoomVisibilityManager.cleanup();
+            selectedTowersManager.cleanup(); // Add this line
             mapRef.current.remove();
         }
+
 
         try {
             const map = L.map(mapContainerRef.current, {
@@ -595,12 +564,21 @@ const StandaloneViewerPage: React.FC = () => {
             // Initialize zoom visibility manager
             zoomVisibilityManager.initialize(map, frontendBufferManager);
 
+            selectedTowersManager.initialize(map);
+            selectedTowersManager.onSelectionChange((towers: SelectedTower[]) => {
+                setSelectedTowers(towers);
+                console.log(`Selection changed: ${towers.length} towers selected`);
+            });
+
             console.log('Map initialized with zoom visibility manager');
 
         } catch (err) {
             console.error('Error initializing map:', err);
             setError('Failed to initialize map');
         }
+
+        initializeTowerPopupHandler();
+
     }, [projectData, loading]);
 
     // Handle basemap changes
@@ -656,12 +634,17 @@ const StandaloneViewerPage: React.FC = () => {
             if (projectData.layer_groups) {
                 projectData.layer_groups.forEach((group: any) => {
                     if (group.layers) {
-                        // FIXED: was allProjectLayers.forEach, now group.layers.forEach
                         group.layers.forEach((layer: any) => {
                             allProjectLayers.push(layer);
                         });
                     }
                 });
+            }
+
+            // Add virtual Selected Towers layer if there are selected towers
+            if (selectedTowers.length > 0) {
+                const selectedTowersLayer = createSelectedTowersVirtualLayer(selectedTowers);
+                allProjectLayers.push(selectedTowersLayer);
             }
 
             console.log(`Processing ${allProjectLayers.length} layers:`, allProjectLayers.map(l => l.name));
@@ -696,14 +679,30 @@ const StandaloneViewerPage: React.FC = () => {
 
                 // Handle regular layers with zoom restrictions
                 const layerId = Number(layerIdStr);
+
+                // Selected towers layer should always be visible if there are selected towers
+                if (layerId === -1) {
+                    const shouldBeVisible = selectedTowers.length > 0 && visibleLayers.has(-1);
+                    const isCurrentlyVisible = mapRef.current!.hasLayer(layer);
+
+                    if (shouldBeVisible && !isCurrentlyVisible) {
+                        mapRef.current!.addLayer(layer);
+                        console.log(`Showed Selected Towers layer`);
+                    } else if (!shouldBeVisible && isCurrentlyVisible) {
+                        mapRef.current!.removeLayer(layer);
+                        console.log(`Hidden Selected Towers layer`);
+                    }
+                    continue;
+                }
+
                 const userWantsVisible = visibleLayers.has(layerId);
 
-                // ✅ CHECK ZOOM RESTRICTIONS FOR TOWER LAYERS
+                // Check zoom restrictions for tower layers
                 const layerName = getLayerNameById(layerId);
                 const isTowerLayer = isAntennaTowerLayer(layerName);
                 const zoomStatus = zoomVisibilityManager.getLayerZoomStatus(layerId);
 
-                // ✅ Layer should only be visible if user wants it AND zoom allows it (for tower layers)
+                // Layer should only be visible if user wants it AND zoom allows it (for tower layers)
                 const shouldBeVisible = userWantsVisible && (!isTowerLayer || zoomStatus.canShow);
                 const isCurrentlyVisible = mapRef.current!.hasLayer(layer);
 
@@ -717,21 +716,29 @@ const StandaloneViewerPage: React.FC = () => {
             }
         };
 
+
         const createMapLayer = async (layerInfo: any): Promise<void> => {
             try {
-                // Try to get data from cache first, then fallback
                 let data = null;
-                const cachedData = layerDataCache.getLayerData(layerInfo.id);
 
-                if (cachedData) {
-                    data = cachedData.data;
-                    console.log(`Using cached data for map layer: ${layerInfo.name}`);
-                } else if (fallbackLayerData[layerInfo.id]) {
-                    data = fallbackLayerData[layerInfo.id];
-                    console.log(`Using fallback data for map layer: ${layerInfo.name}`);
+                // Handle Selected Towers virtual layer
+                if (layerInfo.id === -1) {
+                    data = createSelectedTowersData(selectedTowers);
+                    console.log(`Creating virtual Selected Towers layer with ${selectedTowers.length} towers`);
                 } else {
-                    console.error(`No data available for layer: ${layerInfo.name}`);
-                    return;
+                    // Try to get data from cache first, then fallback
+                    const cachedData = layerDataCache.getLayerData(layerInfo.id);
+
+                    if (cachedData) {
+                        data = cachedData.data;
+                        console.log(`Using cached data for map layer: ${layerInfo.name}`);
+                    } else if (fallbackLayerData[layerInfo.id]) {
+                        data = fallbackLayerData[layerInfo.id];
+                        console.log(`Using fallback data for map layer: ${layerInfo.name}`);
+                    } else {
+                        console.error(`No data available for layer: ${layerInfo.name}`);
+                        return;
+                    }
                 }
 
                 if (!data.features || data.features.length === 0) {
@@ -741,7 +748,7 @@ const StandaloneViewerPage: React.FC = () => {
 
                 console.log(`Creating map layer for: ${layerInfo.name} with ${data.features.length} features`);
 
-                const isTowerLayer = isAntennaTowerLayer(layerInfo.name);
+                const isTowerLayer = isAntennaTowerLayer(layerInfo.name) || layerInfo.id === -1;
                 const isCountyLayer = layerInfo.name === "County Outline" || layerInfo.id === 794;
 
                 // Store tower data for buffer generation
@@ -754,7 +761,7 @@ const StandaloneViewerPage: React.FC = () => {
                 const shouldCluster = isPointLayer(layerInfo) && hasClusteringEnabled(layerInfo);
 
                 if (shouldCluster) {
-                    // Create clustered layer (same as before)
+                    // Create clustered layer
                     const L_MarkerCluster = await import('leaflet.markercluster');
                     const MarkerClusterGroup = (L as any).MarkerClusterGroup;
 
@@ -777,11 +784,27 @@ const StandaloneViewerPage: React.FC = () => {
                             let marker: L.Marker | L.CircleMarker;
 
                             if (isTowerLayer && feature.properties) {
-                                const companyName = getTowerCompanyFromLayerName(layerInfo.name);
+                                let companyName: string;
+                                let isSelected = false;
+
+                                if (layerInfo.id === -1) {
+                                    // This is a selected tower
+                                    companyName = 'Selected';
+                                    isSelected = true;
+                                } else {
+                                    companyName = getTowerCompanyFromLayerName(layerInfo.name);
+                                }
+
                                 const towerIcon = createTowerIcon(companyName);
                                 marker = L.marker([lat, lng], { icon: towerIcon });
 
-                                const popupHTML = createTowerPopupHTML(feature.properties, layerInfo.name);
+                                const popupHTML = createTowerPopupHTML(
+                                    feature.properties,
+                                    companyName,
+                                    layerInfo.name,
+                                    layerInfo.id,
+                                    isSelected
+                                );
                                 marker.bindPopup(popupHTML, {
                                     maxWidth: 400,
                                     className: 'tower-popup'
@@ -830,7 +853,13 @@ const StandaloneViewerPage: React.FC = () => {
                         },
                         onEachFeature: (feature, leafletLayer) => {
                             if (feature.properties && isTowerLayer) {
-                                const popupHTML = createTowerPopupHTML(feature.properties, layerInfo.name);
+                                const popupHTML = createTowerPopupHTML(
+                                    feature.properties,
+                                    getTowerCompanyFromLayerName(layerInfo.name), // companyName
+                                    layerInfo.name, // layerName
+                                    layerInfo.id, // layerId
+                                    false // isSelected
+                                );
                                 leafletLayer.bindPopup(popupHTML, {
                                     maxWidth: 400,
                                     className: 'tower-popup'
@@ -865,6 +894,28 @@ const StandaloneViewerPage: React.FC = () => {
                             }
                         }
                     });
+                }
+
+                const shouldBeVisible_created = visibleLayers.has(layerInfo.id);
+                if (isTowerLayer && layerInfo.id !== -1) {
+                    zoomVisibilityManager.registerLayer(
+                        layerInfo.id,
+                        layerInfo.name,
+                        isTowerLayer,
+                        shouldBeVisible_created
+                    );
+                }
+
+                // Generate frontend buffers for antenna tower layers
+                if (isTowerLayer) {
+                    const companyName = layerInfo.id === -1 ? 'Selected' : getTowerCompanyFromLayerName(layerInfo.name);
+                    frontendBufferManager.generateBuffersFromTowerData(
+                        data,
+                        layerInfo.id,
+                        layerInfo.name,
+                        companyName
+                    );
+                    console.log(`Generated frontend buffers for: ${layerInfo.name}`);
                 }
 
                 // Store the created layer
@@ -913,7 +964,7 @@ const StandaloneViewerPage: React.FC = () => {
         };
 
         updateLayerVisibility();
-    }, [visibleLayers, projectData, loading, allLayersLoaded, cbrsLicenses]);
+    }, [visibleLayers, projectData, loading, allLayersLoaded, cbrsLicenses, selectedTowers]);
 
     useEffect(() => {
         const loadCBRSLicenses = async () => {
@@ -1177,6 +1228,7 @@ const StandaloneViewerPage: React.FC = () => {
                         bufferVisibility={bufferVisibility}
                         zoomHints={zoomHints}
                         currentZoom={currentZoom}
+                        selectedTowers={selectedTowers} // Add this line
                     />
                 )}
             </Box>
