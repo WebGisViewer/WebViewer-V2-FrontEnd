@@ -12,11 +12,26 @@ export interface SelectedTower {
     originalLayerId: number;
 }
 
+// Virtual layer info for Selected Towers
+export interface SelectedTowersVirtualLayer {
+    id: number;
+    name: string;
+    layer_type_name: string;
+    is_visible: boolean;
+    layerGroup: L.LayerGroup;
+    featureCount: number;
+    companyName: string;
+}
+
 export class SelectedTowersManager {
     private selectedTowers: Map<string, SelectedTower> = new Map();
     private selectedLayerGroup: L.LayerGroup | null = null;
     private mapRef: L.Map | null = null;
     private onSelectionChangeCallback: ((towers: SelectedTower[]) => void) | null = null;
+
+    // Virtual layer for integration with LayerControl
+    private selectedTowersVirtualLayer: SelectedTowersVirtualLayer | null = null;
+    private onLayerUpdateCallback: ((layer: SelectedTowersVirtualLayer | null) => void) | null = null;
 
     constructor() {
         // Make this manager globally available
@@ -26,11 +41,25 @@ export class SelectedTowersManager {
     initialize(map: L.Map) {
         this.mapRef = map;
         this.selectedLayerGroup = L.layerGroup();
-        // We'll add this to the map when we have selected towers
+
+        // Initialize virtual layer for LayerControl integration
+        this.selectedTowersVirtualLayer = {
+            id: -1, // Special ID for selected towers
+            name: 'Selected Towers',
+            layer_type_name: 'Point Layer',
+            is_visible: false,
+            layerGroup: this.selectedLayerGroup,
+            featureCount: 0,
+            companyName: 'Selected'
+        };
     }
 
     onSelectionChange(callback: (towers: SelectedTower[]) => void) {
         this.onSelectionChangeCallback = callback;
+    }
+
+    onLayerUpdate(callback: (layer: SelectedTowersVirtualLayer | null) => void) {
+        this.onLayerUpdateCallback = callback;
     }
 
     toggleTower(
@@ -72,6 +101,7 @@ export class SelectedTowersManager {
         this.selectedTowers.set(towerId, selectedTower);
         this.updateSelectedLayer();
         this.notifySelectionChange();
+        this.notifyLayerUpdate();
 
         console.log(`Tower ${towerId} selected from ${layerName}`);
     }
@@ -80,6 +110,7 @@ export class SelectedTowersManager {
         this.selectedTowers.delete(towerId);
         this.updateSelectedLayer();
         this.notifySelectionChange();
+        this.notifyLayerUpdate();
 
         console.log(`Tower ${towerId} unselected`);
     }
@@ -92,14 +123,37 @@ export class SelectedTowersManager {
         return Array.from(this.selectedTowers.values());
     }
 
+    getSelectedTowersVirtualLayer(): SelectedTowersVirtualLayer | null {
+        return this.selectedTowersVirtualLayer;
+    }
+
+    toggleSelectedLayerVisibility(isVisible: boolean) {
+        if (!this.selectedTowersVirtualLayer || !this.mapRef || !this.selectedLayerGroup) return;
+
+        this.selectedTowersVirtualLayer.is_visible = isVisible;
+
+        if (isVisible && this.selectedTowers.size > 0) {
+            if (!this.mapRef.hasLayer(this.selectedLayerGroup)) {
+                this.mapRef.addLayer(this.selectedLayerGroup);
+            }
+        } else {
+            if (this.mapRef.hasLayer(this.selectedLayerGroup)) {
+                this.mapRef.removeLayer(this.selectedLayerGroup);
+            }
+        }
+
+        this.notifyLayerUpdate();
+    }
+
     clearAllSelections() {
         this.selectedTowers.clear();
         this.updateSelectedLayer();
         this.notifySelectionChange();
+        this.notifyLayerUpdate();
     }
 
     private updateSelectedLayer() {
-        if (!this.mapRef || !this.selectedLayerGroup) return;
+        if (!this.mapRef || !this.selectedLayerGroup || !this.selectedTowersVirtualLayer) return;
 
         // Clear existing selected layer
         this.selectedLayerGroup.clearLayers();
@@ -109,11 +163,16 @@ export class SelectedTowersManager {
             if (this.mapRef.hasLayer(this.selectedLayerGroup)) {
                 this.mapRef.removeLayer(this.selectedLayerGroup);
             }
+            this.selectedTowersVirtualLayer.featureCount = 0;
+            this.selectedTowersVirtualLayer.is_visible = false;
             return;
         }
 
-        // Add selected layer to map if not already added
-        if (!this.mapRef.hasLayer(this.selectedLayerGroup)) {
+        // Update feature count
+        this.selectedTowersVirtualLayer.featureCount = this.selectedTowers.size;
+
+        // Add selected layer to map if visibility is enabled
+        if (this.selectedTowersVirtualLayer.is_visible && !this.mapRef.hasLayer(this.selectedLayerGroup)) {
             this.mapRef.addLayer(this.selectedLayerGroup);
         }
 
@@ -156,16 +215,12 @@ export class SelectedTowersManager {
                         <rect x="-1.5" y="2" width="3" height="7" fill="white"/>
                         
                         <!-- WiFi signal arcs -->
-                        <path d="M-7,-3 A9,9 0 0,1 7,-3" fill="none" stroke="white" stroke-width="2" opacity="0.9"/>
-                        <path d="M-5,-1.5 A6,6 0 0,1 5,-1.5" fill="none" stroke="white" stroke-width="2" opacity="0.9"/>
-                        <path d="M-3,0 A3.5,3.5 0 0,1 3,0" fill="none" stroke="white" stroke-width="2" opacity="0.9"/>
+                        <path d="M-6,-2 A8,8 0 0,1 6,-2" fill="none" stroke="white" stroke-width="1.5" opacity="0.9"/>
+                        <path d="M-4,-1 A5,5 0 0,1 4,-1" fill="none" stroke="white" stroke-width="1.5" opacity="0.9"/>
+                        <path d="M-2,0 A2.5,2.5 0 0,1 2,0" fill="none" stroke="white" stroke-width="1.5" opacity="0.9"/>
                         
                         <!-- Center dot -->
-                        <circle cx="0" cy="1.5" r="1.5" fill="white"/>
-                        
-                        <!-- Selection star -->
-                        <path d="M0,-6 L1.5,-2 L6,-2 L2.5,1 L4,5 L0,2.5 L-4,5 L-2.5,1 L-6,-2 L-1.5,-2 Z" 
-                              fill="#FFD700" stroke="white" stroke-width="0.5" opacity="0.8"/>
+                        <circle cx="0" cy="1" r="1" fill="white"/>
                     </g>
                 </svg>
             `;
@@ -179,33 +234,33 @@ export class SelectedTowersManager {
             });
         };
 
-        // Process each selected tower
-        data.features.forEach((feature: any) => {
-            const [lng, lat] = feature.geometry.coordinates;
-            const towerId = `tower_${lat}_${lng}`;
-            const selectedTower = this.selectedTowers.get(towerId);
+        if (data && data.features) {
+            data.features.forEach((feature: any) => {
+                if (feature.geometry?.type === 'Point') {
+                    const [lng, lat] = feature.geometry.coordinates;
+                    const marker = L.marker([lat, lng], {
+                        icon: createSelectedTowerIcon()
+                    });
 
-            if (selectedTower) {
-                const selectedIcon = createSelectedTowerIcon();
-                const marker = L.marker([lat, lng], { icon: selectedIcon });
+                    // Find the original selected tower data
+                    const selectedTower = Array.from(this.selectedTowers.values())
+                        .find(tower => tower.coordinates[0] === lat && tower.coordinates[1] === lng);
 
-                // Use ES6 import instead of require
-                const popupHTML = createTowerPopupHTML(
-                    feature.properties,
-                    selectedTower.companyName,
-                    'Selected Towers',
-                    -1, // Use -1 to indicate this is a selected tower
-                    true // isSelected = true
-                );
+                    if (selectedTower) {
+                        const popupContent = createTowerPopupHTML(
+                            feature.properties || {},
+                            'Selected',
+                            'Selected Towers',
+                            -1,
+                            true // isSelected = true
+                        );
+                        marker.bindPopup(popupContent);
+                    }
 
-                marker.bindPopup(popupHTML, {
-                    maxWidth: 400,
-                    className: 'tower-popup selected-tower-popup'
-                });
-
-                this.selectedLayerGroup!.addLayer(marker);
-            }
-        });
+                    this.selectedLayerGroup!.addLayer(marker);
+                }
+            });
+        }
     }
 
     private generateSelectedTowerBuffers(data: any) {
@@ -226,15 +281,12 @@ export class SelectedTowersManager {
         }
     }
 
-    cleanup() {
-        if (this.mapRef && this.selectedLayerGroup) {
-            this.mapRef.removeLayer(this.selectedLayerGroup);
+    private notifyLayerUpdate() {
+        if (this.onLayerUpdateCallback) {
+            this.onLayerUpdateCallback(this.selectedTowersVirtualLayer);
         }
-        this.selectedTowers.clear();
-        this.selectedLayerGroup = null;
-        this.mapRef = null;
     }
 }
 
-// Create a singleton instance
+// Create global instance
 export const selectedTowersManager = new SelectedTowersManager();

@@ -274,12 +274,15 @@ export const frontendBufferManager = new FrontendAntennaBufferManager();
 
 // Helper functions
 export const isAntennaTowerLayer = (layerName: string): boolean => {
-    return layerName.toLowerCase().includes('antenna locations');
+    return layerName.toLowerCase().includes('antenna locations') ||
+        layerName.toLowerCase() === 'selected towers';
 };
 
+// Update getTowerCompanyFromLayerName to handle Selected Towers
 export const getTowerCompanyFromLayerName = (layerName: string): string => {
     const lowerName = layerName.toLowerCase();
 
+    if (lowerName === 'selected towers') return 'Selected';
     if (lowerName.includes('american tower')) return 'American Towers';
     if (lowerName.includes('sba')) return 'SBA';
     if (lowerName.includes('crown castle')) return 'Crown Castle';

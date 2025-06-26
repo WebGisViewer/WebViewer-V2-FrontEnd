@@ -10,6 +10,7 @@ import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { TowerWithBuffers, BufferVisibilityState, VirtualBufferLayer } from './FrontendAntennaBufferSystem';
 import { ZoomHint, zoomVisibilityManager } from './ZoomVisibilityManager';
+import { SelectedTowersVirtualLayer } from './SelectedTowersManager';
 
 interface StandaloneLayerControlProps {
     projectData: any;
@@ -24,10 +25,14 @@ interface StandaloneLayerControlProps {
     // Zoom system props
     zoomHints?: ZoomHint[];
     currentZoom?: number;
+    // Selected towers props
+    selectedTowersLayer?: SelectedTowersVirtualLayer | null;
+    onSelectedTowersToggle?: (isVisible: boolean) => void;
 }
 
+
 // Styled components
-const ControlContainer = styled(Box)(({ theme }) => ({
+const ControlContainer = styled(Box)(({}) => ({
     position: 'absolute',
     top: '10px',
     right: '10px',
@@ -207,17 +212,19 @@ const ZoomStatus = styled(Box)({
 });
 
 const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
-                                                                           projectData,
-                                                                           visibleLayers,
-                                                                           activeBasemap,
-                                                                           onLayerToggle,
-                                                                           onBasemapChange,
-                                                                           towerBufferRelationships = [],
-                                                                           onBufferToggle,
-                                                                           bufferVisibility = {},
-                                                                           zoomHints = [],
-                                                                           currentZoom = 7,
-                                                                       }) => {
+    projectData,
+    visibleLayers,
+    activeBasemap,
+    onLayerToggle,
+    onBasemapChange,
+    towerBufferRelationships = [],
+    onBufferToggle,
+    bufferVisibility = {},
+    zoomHints = [],
+    currentZoom = 7,
+    selectedTowersLayer,
+    onSelectedTowersToggle}) => {
+
     const [isExpanded, setIsExpanded] = useState(false);
     const [isManuallyExpanded, setIsManuallyExpanded] = useState(false);
     const collapseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -287,8 +294,10 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
 
     // Check if a layer is an antenna tower layer
     const isAntennaTowerLayer = (layerName: string): boolean => {
-        return layerName.toLowerCase().includes('antenna locations');
+        return layerName.toLowerCase().includes('antenna locations') ||
+            layerName.toLowerCase() === 'selected towers';
     };
+
 
     // Find tower buffer relationship for a layer
     const getTowerBufferRelationship = (layerId: number): TowerWithBuffers | undefined => {
@@ -418,7 +427,6 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                                         <LayerGroupContent>
                                             {group.layers?.map((layer: any) => {
                                                 const isChecked = visibleLayers.has(layer.id);
-
                                                 const isTowerLayer = isAntennaTowerLayer(layer.name);
                                                 const towerRelationship = getTowerBufferRelationship(layer.id);
                                                 const layerVisible = visibleLayers.has(layer.id);
@@ -439,7 +447,6 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                                                                         checked={layerVisible}
                                                                         onChange={() => onLayerToggle(layer.id)}
                                                                         size="small"
-                                                                        // ✅ NO disabled prop - users can always check/uncheck
                                                                     />
                                                                 }
                                                                 label={
@@ -447,14 +454,12 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                                                                         <Typography
                                                                             sx={{
                                                                                 fontSize: '13px',
-                                                                                // ✅ FIXED COLOR LOGIC: Normal color when checked, grey when unchecked
                                                                                 color: (isTowerLayer && isChecked && hiddenByZoom)
-                                                                                    ? '#999'        // Grey for zoom-restricted tower layers
+                                                                                    ? '#999'
                                                                                     : isChecked
-                                                                                        ? '#333'    // Black for checked layers
-                                                                                        : '#333',   // Light grey for unchecked layers
-                                                                                // ✅ Italic style only for zoom-restricted towers
-                                                                                fontStyle: (isTowerLayer && isChecked && hiddenByZoom) ? 'italic' : 'normal'                                                                                // ✅ ADD ITALIC STYLE when hidden by zoom to show it's restricted
+                                                                                        ? '#333'
+                                                                                        : '#333',
+                                                                                fontStyle: (isTowerLayer && isChecked && hiddenByZoom) ? 'italic' : 'normal'
                                                                             }}
                                                                         >
                                                                             {layer.name}
@@ -478,6 +483,47 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                                                                 <ZoomInIcon sx={{ fontSize: '12px' }} />
                                                                 {formatZoomRequirement(zoomStatus.needsZoom)}
                                                             </ZoomRequirement>
+                                                        )}
+
+                                                        {/* Selected Towers Layer - Add this AFTER the first antenna tower layer */}
+                                                        {isTowerLayer &&
+                                                            selectedTowersLayer &&
+                                                            selectedTowersLayer.featureCount > 0 &&
+                                                            group.layers?.findIndex((l: any) => isAntennaTowerLayer(l.name)) === group.layers?.indexOf(layer) && (
+                                                                <Box sx={{ marginTop: '4px', marginBottom: '4px' }}>
+                                                                <LayerItem sx={{ paddingLeft: '16px' }}>
+                                                                    <ColorIndicator
+                                                                        layerColor="#FFD700"
+                                                                        layerType="Point Layer"
+                                                                    />
+                                                                    <FormControlLabel
+                                                                        control={
+                                                                            <Checkbox
+                                                                                checked={selectedTowersLayer.is_visible}
+                                                                                onChange={(e) => {
+                                                                                    if (onSelectedTowersToggle) {
+                                                                                        onSelectedTowersToggle(e.target.checked);
+                                                                                    }
+                                                                                }}
+                                                                                size="small"
+                                                                            />
+                                                                        }
+                                                                        label={
+                                                                            <Typography
+                                                                                sx={{
+                                                                                    fontSize: '13px',
+                                                                                    color: '#333',
+                                                                                    fontWeight: selectedTowersLayer.is_visible ? 600 : 400,
+                                                                                    fontStyle: 'italic'
+                                                                                }}
+                                                                            >
+                                                                                {selectedTowersLayer.name} ({selectedTowersLayer.featureCount})
+                                                                            </Typography>
+                                                                        }
+                                                                        sx={{ margin: 0, flex: 1 }}
+                                                                    />
+                                                                </LayerItem>
+                                                            </Box>
                                                         )}
 
                                                         {/* Buffer layers for antenna towers */}
@@ -537,8 +583,13 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                     )}
 
                     {/* System statistics */}
-                    {(towerBufferRelationships.length > 0 || zoomHints.length > 0) && (
+                    {(towerBufferRelationships.length > 0 || zoomHints.length > 0 || (selectedTowersLayer && selectedTowersLayer.featureCount > 0)) && (
                         <Box sx={{ marginTop: '8px', padding: '4px', backgroundColor: '#f9f9f9', borderRadius: '3px' }}>
+                            {selectedTowersLayer && selectedTowersLayer.featureCount > 0 && (
+                                <Typography variant="caption" sx={{ fontSize: '10px', color: '#666', display: 'block' }}>
+                                    Selected: {selectedTowersLayer.featureCount} tower{selectedTowersLayer.featureCount !== 1 ? 's' : ''}
+                                </Typography>
+                            )}
                             {towerBufferRelationships.length > 0 && (
                                 <Typography variant="caption" sx={{ fontSize: '10px', color: '#666', display: 'block' }}>
                                     Coverage: {towerBufferRelationships.length} tower group{towerBufferRelationships.length !== 1 ? 's' : ''}
