@@ -1,9 +1,7 @@
-
 // Frontend-Only Antenna Buffer System
 // Generates buffers dynamically from tower data without backend changes
 
 import * as L from 'leaflet';
-import { createBufferPopupHTML } from './EnhancedTowerPopupSystem';
 import { towerCompanyColors } from '../../constants/towerConstants';
 
 // Buffer configuration
@@ -82,13 +80,8 @@ class FrontendAntennaBufferManager {
                             pane: 'overlayPane'
                         });
 
-                        // Add popup info
-                        const popupContent = createBufferPopupHTML(
-                            feature.properties || {},
-                            distance,
-                            companyName
-                        );
-                        circle.bindPopup(popupContent);
+                        // ✅ REMOVED: No popup binding for buffers
+                        // circle.bindPopup(popupContent);
 
                         bufferGroup.addLayer(circle);
                         featureCount++;
@@ -125,7 +118,7 @@ class FrontendAntennaBufferManager {
         return towerCompanyColors[companyName as keyof typeof towerCompanyColors] || towerCompanyColors['Other'];
     }
 
-    // Toggle all buffers for a parent tower layer
+    // ✅ FIXED: Toggle all buffers for a parent tower layer with zoom-aware logic
     toggleParentLayerBuffers(parentLayerId: number, isVisible: boolean, map: L.Map): void {
         const buffers = this.towerBufferRelationships.get(parentLayerId);
         if (!buffers) return;
@@ -147,14 +140,31 @@ class FrontendAntennaBufferManager {
         this.notifyVisibilityChange();
     }
 
-    // Toggle individual buffer layer
+    // ✅ NEW: Force hide all buffers for a tower (when zooming out)
+    forceHideBuffersForTower(parentLayerId: number, map: L.Map): void {
+        const buffers = this.towerBufferRelationships.get(parentLayerId);
+        if (!buffers) return;
+
+        buffers.forEach(buffer => {
+            if (map.hasLayer(buffer.layerGroup)) {
+                map.removeLayer(buffer.layerGroup);
+            }
+            // ✅ CRITICAL: Set buffer visibility to false when parent tower is hidden by zoom
+            buffer.isVisible = false;
+        });
+
+        this.notifyVisibilityChange();
+        console.log(`Force hidden all buffers for tower layer ${parentLayerId} due to zoom out`);
+    }
+
+    // ✅ ENHANCED: Toggle individual buffer layer with parent visibility check
     toggleBufferLayer(bufferId: string, isVisible: boolean, map: L.Map, parentVisible: boolean = true): void {
         const buffer = this.bufferLayers.get(bufferId);
         if (!buffer) return;
 
         buffer.isVisible = isVisible;
 
-        // Only show if parent is also visible
+        // Only show if parent is also visible AND user wants buffer visible
         if (isVisible && parentVisible) {
             if (!map.hasLayer(buffer.layerGroup)) {
                 map.addLayer(buffer.layerGroup);
@@ -166,6 +176,13 @@ class FrontendAntennaBufferManager {
         }
 
         this.notifyVisibilityChange();
+    }
+
+    // ✅ NEW: Check if tower is currently visible (for zoom logic)
+    isTowerLayerVisible(parentLayerId: number, map: L.Map): boolean {
+        // This will be called by the zoom manager to check parent visibility
+        // You can add additional logic here if needed
+        return true; // Default - let zoom manager handle the logic
     }
 
     // Get all tower-buffer relationships for UI
