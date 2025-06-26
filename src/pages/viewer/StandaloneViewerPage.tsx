@@ -190,6 +190,64 @@ const StandaloneViewerPage: React.FC = () => {
 
     const [selectedTowers, setSelectedTowers] = useState<SelectedTower[]>([]);
 
+    // ✅ MOVE getLayerNameById outside of useEffect and make it a useCallback
+    const getLayerNameById = useCallback((layerId: number): string => {
+        if (!projectData?.layer_groups) return '';
+
+        for (const group of projectData.layer_groups) {
+            if (group.layers) {
+                for (const layer of group.layers) {
+                    if (layer.id === layerId) {
+                        return layer.name;
+                    }
+                }
+            }
+        }
+        return '';
+    }, [projectData]);
+
+    // ✅ ADD handleLayerToggle function for proper buffer management
+    const handleLayerToggle = useCallback((layerId: number) => {
+        setVisibleLayers(prev => {
+            const newSet = new Set(prev);
+            const isNowVisible = !prev.has(layerId);
+
+            if (isNowVisible) {
+                newSet.add(layerId);
+            } else {
+                newSet.delete(layerId);
+            }
+
+            // ✅ CRITICAL FIX: Handle buffer visibility for tower layers
+            const layerName = getLayerNameById(layerId);
+            const isTowerLayer = isAntennaTowerLayer(layerName);
+
+            if (isTowerLayer && mapRef.current) {
+                if (isNowVisible) {
+                    // When tower layer is turned ON, enable buffer system but keep buffers hidden by default
+                    frontendBufferManager.toggleParentLayerBuffers(layerId, true, mapRef.current);
+                } else {
+                    // ✅ When tower layer is turned OFF, force hide and disable all buffers
+                    frontendBufferManager.toggleParentLayerBuffers(layerId, false, mapRef.current);
+
+                    // Also update buffer visibility state to reflect that buffers are off
+                    setBufferVisibility(prevBufferState => {
+                        const newBufferState = { ...prevBufferState };
+                        const towerBuffers = towerBufferRelationships.find(rel => rel.towerId === layerId);
+                        if (towerBuffers) {
+                            towerBuffers.buffers.forEach(buffer => {
+                                newBufferState[buffer.id] = false;
+                            });
+                        }
+                        return newBufferState;
+                    });
+                }
+            }
+
+            return newSet;
+        });
+    }, [getLayerNameById, towerBufferRelationships]);
+
     const createSelectedTowersVirtualLayer = (selectedTowers: SelectedTower[]): StandaloneLayer => {
         return {
             id: -1, // Virtual layer ID
@@ -213,7 +271,7 @@ const StandaloneViewerPage: React.FC = () => {
         };
     };
 
-// Add this function to create selected towers GeoJSON data
+    // Add this function to create selected towers GeoJSON data
     const createSelectedTowersData = (selectedTowers: SelectedTower[]) => {
         return {
             type: 'FeatureCollection' as const,
@@ -639,21 +697,6 @@ const StandaloneViewerPage: React.FC = () => {
     useEffect(() => {
         if (!mapRef.current || !projectData || loading || !allLayersLoaded) return;
 
-        const getLayerNameById = (layerId: number): string => {
-            if (!projectData?.layer_groups) return '';
-
-            for (const group of projectData.layer_groups) {
-                if (group.layers) {
-                    for (const layer of group.layers) {
-                        if (layer.id === layerId) {
-                            return layer.name;
-                        }
-                    }
-                }
-            }
-            return '';
-        };
-
         // Replace the existing updateLayerVisibility function (around line 577)
         const updateLayerVisibility = async () => {
             // Get all layers from project data
@@ -769,15 +812,33 @@ const StandaloneViewerPage: React.FC = () => {
                 const zoomStatus = zoomVisibilityManager.getLayerZoomStatus(layerId);
 
                 // Layer should only be visible if user wants it AND zoom allows it (for tower layers)
-                const shouldBeVisible = userWantsVisible && (!isTowerLayer || zoomStatus.canShow);
-                const isCurrentlyVisible = mapRef.current!.hasLayer(layer);
+                if (isTowerLayer) {
+                    const shouldBeVisible = userWantsVisible && zoomStatus.canShow;
+                    const isCurrentlyVisible = mapRef.current!.hasLayer(layer);
 
-                if (shouldBeVisible && !isCurrentlyVisible) {
-                    mapRef.current!.addLayer(layer);
-                    console.log(`Showed layer ${layerId} (zoom allowed: ${!isTowerLayer || zoomStatus.canShow})`);
-                } else if (!shouldBeVisible && isCurrentlyVisible) {
-                    mapRef.current!.removeLayer(layer);
-                    console.log(`Hidden layer ${layerId} (user wants: ${userWantsVisible}, zoom allows: ${!isTowerLayer || zoomStatus.canShow})`);
+                    if (shouldBeVisible && !isCurrentlyVisible) {
+                        mapRef.current!.addLayer(layer);
+                        // Enable buffer system when tower becomes visible
+                        frontendBufferManager.toggleParentLayerBuffers(layerId, true, mapRef.current!);
+                        console.log(`Showed layer ${layerId} (zoom allowed: ${zoomStatus.canShow})`);
+                    } else if (!shouldBeVisible && isCurrentlyVisible) {
+                        mapRef.current!.removeLayer(layer);
+                        // ✅ CRITICAL: Hide all buffers when tower layer becomes hidden
+                        frontendBufferManager.toggleParentLayerBuffers(layerId, false, mapRef.current!);
+                        console.log(`Hidden layer ${layerId} (user wants: ${userWantsVisible}, zoom allows: ${zoomStatus.canShow})`);
+                    }
+                } else {
+                    // Handle non-tower layers normally
+                    const shouldBeVisible = userWantsVisible;
+                    const isCurrentlyVisible = mapRef.current!.hasLayer(layer);
+
+                    if (shouldBeVisible && !isCurrentlyVisible) {
+                        mapRef.current!.addLayer(layer);
+                        console.log(`Showed layer ${layerId}`);
+                    } else if (!shouldBeVisible && isCurrentlyVisible) {
+                        mapRef.current!.removeLayer(layer);
+                        console.log(`Hidden layer ${layerId}`);
+                    }
                 }
             }
         };
@@ -1184,24 +1245,8 @@ const StandaloneViewerPage: React.FC = () => {
         }
     };
     // Handle layer toggle
-    const handleLayerToggle = useCallback((layerId: number) => {
-        setVisibleLayers(prev => {
-            const newSet = new Set(prev);
-            const wasVisible = newSet.has(layerId);
+    // Update the layer toggle handler to properly manage buffer visibility
 
-            if (wasVisible) {
-                newSet.delete(layerId);
-                // ✅ Always update zoom manager when layer is toggled off
-                zoomVisibilityManager.setUserVisibility(layerId, false);
-            } else {
-                newSet.add(layerId);
-                // ✅ Always update zoom manager when layer is toggled on
-                zoomVisibilityManager.setUserVisibility(layerId, true);
-            }
-
-            return newSet;
-        });
-    }, []);
 
     // Handle buffer toggle
     const handleBufferToggle = useCallback((bufferId: string, isVisible: boolean) => {
@@ -1306,41 +1351,44 @@ const StandaloneViewerPage: React.FC = () => {
                 )}
 
                 {projectData && (
+                    // Update the StandaloneLayerControl component call
                     <StandaloneLayerControl
                         projectData={projectData}
                         visibleLayers={visibleLayers}
                         activeBasemap={activeBasemap}
-                        onLayerToggle={(layerId: number) => {
-                            setVisibleLayers(prev => {
-                                const newSet = new Set(prev);
-                                if (newSet.has(layerId)) {
-                                    newSet.delete(layerId);
-                                } else {
-                                    newSet.add(layerId);
-                                }
-                                return newSet;
-                            });
-                        }}
+                        onLayerToggle={handleLayerToggle} // ✅ Use the new handler
                         onBasemapChange={setActiveBasemap}
                         towerBufferRelationships={towerBufferRelationships}
                         onBufferToggle={(bufferId: string, isVisible: boolean) => {
-                            if (onBufferToggle) {
-                                setBufferVisibility(prev => ({...prev, [bufferId]: isVisible}));
-                                frontendBufferManager.toggleBufferLayer(
-                                    bufferId,
-                                    isVisible,
-                                    mapRef.current!,
-                                    true
-                                );
+                            setBufferVisibility(prev => ({
+                                ...prev,
+                                [bufferId]: isVisible
+                            }));
+
+                            // Find the parent tower layer to check if it's visible
+                            const buffer = frontendBufferManager.getBufferLayer(bufferId);
+                            if (buffer && mapRef.current) {
+                                const parentVisible = visibleLayers.has(buffer.parentLayerId);
+                                frontendBufferManager.toggleBufferLayer(bufferId, isVisible, mapRef.current, parentVisible);
                             }
                         }}
                         bufferVisibility={bufferVisibility}
                         zoomHints={zoomHints}
                         currentZoom={currentZoom}
-                        // ✅ Remove these separate props since Selected Towers is now part of the group
-                        // selectedTowersLayer={selectedTowersLayer}
-                        // onSelectedTowersToggle={onSelectedTowersToggle}
+                        selectedTowersLayer={selectedTowers.length > 0 ? createSelectedTowersVirtualLayer(selectedTowers) : null}
+                        onSelectedTowersToggle={(isVisible: boolean) => {
+                            setVisibleLayers(prev => {
+                                const newSet = new Set(prev);
+                                if (isVisible) {
+                                    newSet.add(-1);
+                                } else {
+                                    newSet.delete(-1);
+                                }
+                                return newSet;
+                            });
+                        }}
                     />
+
 
                 )}
             </Box>
