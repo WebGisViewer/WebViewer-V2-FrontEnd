@@ -8,9 +8,11 @@ import LayersIcon from '@mui/icons-material/Layers';
 import CloseIcon from '@mui/icons-material/Close';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import GetAppIcon from '@mui/icons-material/GetApp';
 import { TowerWithBuffers, BufferVisibilityState, VirtualBufferLayer } from './FrontendAntennaBufferSystem';
 import { ZoomHint, zoomVisibilityManager } from './ZoomVisibilityManager';
-import { SelectedTowersVirtualLayer } from './SelectedTowersManager';
+import { SelectedTowersVirtualLayer, selectedTowersManager } from './SelectedTowersManager';
+import { exportCSV } from '../../utils';
 
 interface StandaloneLayerControlProps {
     projectData: any;
@@ -234,6 +236,25 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
         }
         return new Set();
     });
+
+    const handleExportSelectedTowers = () => {
+        const towers = selectedTowersManager.getSelectedTowers();
+        if (towers.length === 0) {
+            console.warn('No selected towers to export');
+            return;
+        }
+
+        const csvData = towers.map(tower => ({
+            id: tower.id,
+            latitude: tower.coordinates[0],
+            longitude: tower.coordinates[1],
+            layer: tower.layerName,
+            company: tower.companyName,
+            ...tower.data
+        }));
+
+        exportCSV(csvData, 'selected_towers');
+    };
 
     // Clear any existing timeout
     const clearCollapseTimeout = () => {
@@ -592,9 +613,16 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                     {(towerBufferRelationships.length > 0 || zoomHints.length > 0 || (selectedTowersLayer && selectedTowersLayer.featureCount > 0)) && (
                         <Box sx={{ marginTop: '8px', padding: '4px', backgroundColor: '#f9f9f9', borderRadius: '3px' }}>
                             {selectedTowersLayer && selectedTowersLayer.featureCount > 0 && (
-                                <Typography variant="caption" sx={{ fontSize: '10px', color: '#666', display: 'block' }}>
-                                    Selected: {selectedTowersLayer.featureCount} tower{selectedTowersLayer.featureCount !== 1 ? 's' : ''}
-                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                    <Typography variant="caption" sx={{ fontSize: '10px', color: '#666', flex: 1 }}>
+                                        Selected: {selectedTowersLayer.featureCount} tower{selectedTowersLayer.featureCount !== 1 ? 's' : ''}
+                                    </Typography>
+                                    <Tooltip title="Export selected towers">
+                                        <IconButton size="small" onClick={handleExportSelectedTowers}>
+                                            <GetAppIcon fontSize="small" />
+                                        </IconButton>
+                                    </Tooltip>
+                                </Box>
                             )}
                             {towerBufferRelationships.length > 0 && (
                                 <Typography variant="caption" sx={{ fontSize: '10px', color: '#666', display: 'block' }}>
