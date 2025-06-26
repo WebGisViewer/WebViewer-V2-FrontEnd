@@ -302,28 +302,47 @@ const StandaloneViewerPage: React.FC = () => {
         };
     }, []);
 
+
+// Update the useEffect for selectedTowers to properly clean up:
     useEffect(() => {
-        if (selectedTowers.length > 0) {
-            // Auto-enable the Selected Towers layer when towers are selected
-            setVisibleLayers(prev => new Set([...prev, -1]));
-        } else {
-            // Auto-disable the Selected Towers layer when no towers are selected
-            setVisibleLayers(prev => {
+        // ✅ Force layer visibility update when selected towers change
+        setVisibleLayers(prev => {
+            if (selectedTowers.length > 0) {
+                // Auto-enable the Selected Towers layer when towers are selected
+                const newSet = new Set([...prev, -1]);
+                return newSet;
+            } else {
+                // Auto-disable the Selected Towers layer when no towers are selected
                 const newSet = new Set(prev);
                 newSet.delete(-1);
-                return newSet;
-            });
 
-            // Clean up the selected towers layer from preloaded layers
-            setPreloadedLayers(prev => {
-                const newLayers = { ...prev };
-                if (newLayers[-1]) {
-                    delete newLayers[-1];
+                // ✅ CRITICAL: Clean up ALL references to selected towers layer
+                setPreloadedLayers(prevLayers => {
+                    const newLayers = { ...prevLayers };
+                    if (newLayers[-1]) {
+                        // Remove from map if currently displayed
+                        if (mapRef.current && mapRef.current.hasLayer(newLayers[-1])) {
+                            mapRef.current.removeLayer(newLayers[-1]);
+                        }
+                        delete newLayers[-1];
+                    }
+                    return newLayers;
+                });
+
+                // ✅ Also clean up from project data to prevent duplicates
+                if (projectData?.layer_groups) {
+                    projectData.layer_groups.forEach((group: any) => {
+                        if (group.layers) {
+                            group.layers = group.layers.filter((layer: any) => layer.id !== -1);
+                        }
+                    });
                 }
-                return newLayers;
-            });
-        }
+
+                return newSet;
+            }
+        });
     }, [selectedTowers]);
+
 
     // Load project data
     useEffect(() => {
@@ -628,6 +647,7 @@ const StandaloneViewerPage: React.FC = () => {
             return '';
         };
 
+        // Replace the existing updateLayerVisibility function (around line 577)
         const updateLayerVisibility = async () => {
             // Get all layers from project data
             const allProjectLayers: any[] = [];
@@ -641,10 +661,44 @@ const StandaloneViewerPage: React.FC = () => {
                 });
             }
 
-            // Add virtual Selected Towers layer if there are selected towers
+            // ✅ CRITICAL FIX: Add Selected Towers layer to the Antenna Towers group instead of as separate layer
             if (selectedTowers.length > 0) {
-                const selectedTowersLayer = createSelectedTowersVirtualLayer(selectedTowers);
-                allProjectLayers.push(selectedTowersLayer);
+                // Find the Antenna Towers group
+                let antennaTowersGroup = null;
+                if (projectData.layer_groups) {
+                    antennaTowersGroup = projectData.layer_groups.find((group: any) =>
+                        group.name?.toLowerCase().includes('antenna') ||
+                        group.layers?.some((layer: any) => isAntennaTowerLayer(layer.name))
+                    );
+                }
+
+                if (antennaTowersGroup) {
+                    // Create the virtual Selected Towers layer
+                    const selectedTowersLayer = createSelectedTowersVirtualLayer(selectedTowers);
+
+                    // ✅ Add it to the existing Antenna Towers group instead of creating separate
+                    if (!antennaTowersGroup.layers.find((layer: any) => layer.id === -1)) {
+                        // Only add if not already present
+                        antennaTowersGroup.layers.push(selectedTowersLayer);
+                        console.log(`Added Selected Towers layer to ${antennaTowersGroup.name} group`);
+                    }
+
+                    // Add to allProjectLayers for processing
+                    allProjectLayers.push(selectedTowersLayer);
+                } else {
+                    // Fallback: add as standalone if no antenna group found
+                    const selectedTowersLayer = createSelectedTowersVirtualLayer(selectedTowers);
+                    allProjectLayers.push(selectedTowersLayer);
+                }
+            } else {
+                // Remove Selected Towers layer from group when no towers selected
+                if (projectData.layer_groups) {
+                    projectData.layer_groups.forEach((group: any) => {
+                        if (group.layers) {
+                            group.layers = group.layers.filter((layer: any) => layer.id !== -1);
+                        }
+                    });
+                }
             }
 
             console.log(`Processing ${allProjectLayers.length} layers:`, allProjectLayers.map(l => l.name));
@@ -687,13 +741,18 @@ const StandaloneViewerPage: React.FC = () => {
 
                     if (shouldBeVisible && !isCurrentlyVisible) {
                         mapRef.current!.addLayer(layer);
-                        console.log(`Showed Selected Towers layer`);
+                        // ✅ Also enable buffer visibility for selected towers
+                        frontendBufferManager.toggleParentLayerBuffers(-1, true, mapRef.current!);
+                        console.log(`Showed Selected Towers layer with ${selectedTowers.length} towers`);
                     } else if (!shouldBeVisible && isCurrentlyVisible) {
                         mapRef.current!.removeLayer(layer);
+                        // ✅ Also disable buffer visibility for selected towers
+                        frontendBufferManager.toggleParentLayerBuffers(-1, false, mapRef.current!);
                         console.log(`Hidden Selected Towers layer`);
                     }
                     continue;
                 }
+
 
                 const userWantsVisible = visibleLayers.has(layerId);
 
@@ -984,6 +1043,29 @@ const StandaloneViewerPage: React.FC = () => {
         }
     }, [projectData]);
 
+    // Add this function around line 1297 or in the appropriate location
+    const onBufferToggle = useCallback((bufferId: string, isVisible: boolean) => {
+        if (!mapRef.current) return;
+
+        // Find the parent layer that owns this buffer
+        let parentLayerVisible = false;
+        for (const [layerId] of Object.entries(layersRef.current)) {
+            if (visibleLayers.has(Number(layerId))) {
+                parentLayerVisible = true;
+                break;
+            }
+        }
+
+        // Toggle the buffer layer
+        frontendBufferManager.toggleBufferLayer(bufferId, isVisible, mapRef.current, parentLayerVisible);
+
+        // Update buffer visibility state
+        setBufferVisibility(prev => ({
+            ...prev,
+            [bufferId]: isVisible
+        }));
+    }, [visibleLayers]);
+
     const createCountyLabels = (layerId: number, data: any) => {
         if (!mapRef.current) return;
 
@@ -1221,15 +1303,38 @@ const StandaloneViewerPage: React.FC = () => {
                         projectData={projectData}
                         visibleLayers={visibleLayers}
                         activeBasemap={activeBasemap}
-                        onLayerToggle={handleLayerToggle}
-                        onBasemapChange={handleBasemapChange}
+                        onLayerToggle={(layerId: number) => {
+                            setVisibleLayers(prev => {
+                                const newSet = new Set(prev);
+                                if (newSet.has(layerId)) {
+                                    newSet.delete(layerId);
+                                } else {
+                                    newSet.add(layerId);
+                                }
+                                return newSet;
+                            });
+                        }}
+                        onBasemapChange={setActiveBasemap}
                         towerBufferRelationships={towerBufferRelationships}
-                        onBufferToggle={handleBufferToggle}
+                        onBufferToggle={(bufferId: string, isVisible: boolean) => {
+                            if (onBufferToggle) {
+                                setBufferVisibility(prev => ({...prev, [bufferId]: isVisible}));
+                                frontendBufferManager.toggleBufferLayer(
+                                    bufferId,
+                                    isVisible,
+                                    mapRef.current!,
+                                    true
+                                );
+                            }
+                        }}
                         bufferVisibility={bufferVisibility}
                         zoomHints={zoomHints}
                         currentZoom={currentZoom}
-                        selectedTowers={selectedTowers} // Add this line
+                        // ✅ Remove these separate props since Selected Towers is now part of the group
+                        // selectedTowersLayer={selectedTowersLayer}
+                        // onSelectedTowersToggle={onSelectedTowersToggle}
                     />
+
                 )}
             </Box>
         </>

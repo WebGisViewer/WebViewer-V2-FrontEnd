@@ -1,9 +1,11 @@
+
 // Frontend-Only Antenna Buffer System
 // Generates buffers dynamically from tower data without backend changes
 
 import * as L from 'leaflet';
-// ADD this import after it:
 import { createBufferPopupHTML } from './EnhancedTowerPopupSystem';
+import { towerCompanyColors } from '../../constants/towerConstants';
+
 // Buffer configuration
 interface BufferConfig {
     distances: number[]; // in miles
@@ -120,13 +122,7 @@ class FrontendAntennaBufferManager {
 
     // Get company-specific colors
     private getCompanyColor(companyName: string): string {
-        const companyColors = {
-            'American Towers': '#dc3545', // red
-            'SBA': '#6f42c1', // purple
-            'Crown Castle': '#fd7e14', // orange
-            'Other': '#0d6efd' // blue
-        };
-        return companyColors[companyName] || companyColors['Other'];
+        return towerCompanyColors[companyName as keyof typeof towerCompanyColors] || towerCompanyColors['Other'];
     }
 
     // Toggle all buffers for a parent tower layer
@@ -295,7 +291,6 @@ export const getTowerCompanyFromLayerName = (layerName: string): string => {
 export const getTowerCompanyColor = (companyName: string): string => {
     return towerCompanyColors[companyName as keyof typeof towerCompanyColors] || towerCompanyColors['Other'];
 };
-
 
 // Buffer visibility state management
 export interface BufferVisibilityState {

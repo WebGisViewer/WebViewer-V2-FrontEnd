@@ -284,6 +284,11 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
 
     // Function to extract color from layer style
     const getLayerColor = (layer: any): string => {
+        // Special handling for Selected Towers
+        if (layer.id === -1 || layer.name === 'Selected Towers') {
+            return '#FFD700'; // Gold color for selected towers
+        }
+
         if (layer.style?.fillColor) return layer.style.fillColor;
         if (layer.style?.color) return layer.style.color;
         if (layer.layer_type_name === 'Point Layer') return '#3388ff';
@@ -291,6 +296,7 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
         if (layer.layer_type_name === 'Polygon Layer') return '#3388ff';
         return '#3388ff';
     };
+
 
     // Check if a layer is an antenna tower layer
     const isAntennaTowerLayer = (layerName: string): boolean => {

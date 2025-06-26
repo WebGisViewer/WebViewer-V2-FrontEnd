@@ -99,113 +99,118 @@ export const createTowerPopupHTML = (
         return div.innerHTML;
     };
 
+// Replace the popup button logic section (around line 110) with this:
     const popupHTML = `
-        <style>
-        .popup-container {
-            font-family: Arial, sans-serif;
-            max-width: 400px;
-            position: relative;
-        }
-        
-        .copy-btn {
-            position: absolute;
-            top: 5px;
-            right: 5px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            padding: 4px 8px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: bold;
-            z-index: 1000;
-        }
-        
-        .copy-btn:hover {
-            background-color: #45a049;
-        }
+    <style>
+    .popup-container {
+        font-family: Arial, sans-serif;
+        max-width: 400px;
+        position: relative;
+    }
+    
+    .copy-btn {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        padding: 4px 8px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: bold;
+        z-index: 1000;
+    }
+    
+    .copy-btn:hover {
+        background-color: #45a049;
+    }
 
-        .select-btn {
-            position: absolute;
-            top: 5px;
-            right: ${canSelect ? '60px' : '5px'};
-            background-color: ${currentlySelected ? '#FFD700' : '#2196F3'};
-            color: ${currentlySelected ? '#333' : 'white'};
-            border: none;
-            padding: 4px 8px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: bold;
-            z-index: 1000;
-        }
-        
-        .select-btn:hover {
-            background-color: ${currentlySelected ? '#FFC107' : '#1976D2'};
-        }
-        
-        .tower-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-family: Arial, sans-serif;
-            margin-top: 20px;
-        }
-        
-        .tower-table th, .tower-table td {
-            border: 1px solid #ddd;
-            padding: 10px;
-            text-align: left;
-            min-width: 120px;
-        }
-        
-        .tower-table th {
-            background-color: #2196F3;
-            color: white;
-            font-weight: bold;
-        }
-        
-        .tower-table tr:nth-child(even) {
-            background-color: #f2f2f2;
-        }
-        
-        .tower-table tr:hover {
-            background-color: #ddd;
-        }
-        
-        .tower-table td {
-            font-weight: normal;
-        }
-        
-        .popup-header {
-            font-weight: bold;
-            font-size: 14px;
-            color: #333;
-            margin-bottom: 5px;
-        }
-        </style>
+    .select-btn {
+        position: absolute;
+        top: 5px;
+        right: ${currentlySelected ? '5px' : '60px'};
+        background-color: ${currentlySelected ? '#FFD700' : '#2196F3'};
+        color: ${currentlySelected ? '#333' : 'white'};
+        border: none;
+        padding: 4px 8px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: bold;
+        z-index: 1000;
+    }
+    
+    .select-btn:hover {
+        background-color: ${currentlySelected ? '#FFC107' : '#1976D2'};
+    }
+    
+    .tower-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: Arial, sans-serif;
+        margin-top: 20px;
+    }
+    
+    .tower-table th, .tower-table td {
+        border: 1px solid #ddd;
+        padding: 10px;
+        text-align: left;
+        min-width: 120px;
+    }
+    
+    .tower-table th {
+        background-color: #2196F3;
+        color: white;
+        font-weight: bold;
+    }
+    
+    .tower-table tr:nth-child(even) {
+        background-color: #f2f2f2;
+    }
+    
+    .tower-table tr:hover {
+        background-color: #ddd;
+    }
+    
+    .tower-table td {
+        font-weight: normal;
+    }
+    
+    .popup-header {
+        font-weight: bold;
+        font-size: 14px;
+        color: #333;
+        margin-bottom: 5px;
+    }
+    </style>
 
-        <div class="popup-container">
-            ${canSelect ? `<button class="copy-btn" onclick="window.handleTowerPopupAction('copy', '${escapeHtml(towerId)}')">Copy</button>` : ''}
-            ${canSelect ? `<button class="select-btn" onclick="window.handleTowerPopupAction('toggle', '${escapeHtml(towerId)}', '${escapeHtml(layerName || 'Unknown Layer')}', '${escapeHtml(companyName || 'Unknown Company')}', ${layerId || 0})">${currentlySelected ? 'Unselect' : 'Select'}</button>` : ''}
-            ${!canSelect && !currentlySelected ? `<button class="copy-btn" onclick="window.handleTowerPopupAction('copy', '${escapeHtml(towerId)}')">Copy</button>` : ''}
-            ${currentlySelected ? `<button class="select-btn" onclick="window.handleTowerPopupAction('toggle', '${escapeHtml(towerId)}', '${escapeHtml(layerName || 'Unknown Layer')}', '${escapeHtml(companyName || 'Unknown Company')}', ${layerId || 0})">Selected ✓</button>` : ''}
-            
-            <div class="popup-header">
-                ${layerName === 'Selected Towers' ? 'Selected ' : ''}FCC Tower Information
-            </div>
-            
-            <table class='tower-table'>
-                <tr><td><b>Latitude</b></td><td>${safeValue(properties.lat)}</td></tr>
-                <tr><td><b>Longitude</b></td><td>${safeValue(properties.lon)}</td></tr>
-                <tr><td><b>County Name</b></td><td>${formatCountyDisplay()}</td></tr>
-                <tr><td><b>Overall Height Above Ground (Meters)</b></td><td>${safeValue(properties.overall_height_above_ground)}</td></tr>
-                <tr><td><b>Type</b></td><td>${formatTypeDisplay()}</td></tr>
-                <tr><td><b>Owner</b></td><td>${safeValue(properties.entity)}</td></tr>
-                ${companyName ? `<tr><td><b>Company</b></td><td>${companyName}</td></tr>` : ''}
-                ${layerName ? `<tr><td><b>Layer</b></td><td>${layerName}</td></tr>` : ''}
-            </table>
+    <div class="popup-container">
+        <!-- Always show copy button -->
+        <button class="copy-btn" onclick="window.handleTowerPopupAction('copy', '${escapeHtml(towerId)}')">Copy</button>
+        
+        <!-- Show select/unselect button only for non-selected towers layer -->
+        ${canSelect ? `<button class="select-btn" onclick="window.handleTowerPopupAction('toggle', '${escapeHtml(towerId)}', '${escapeHtml(layerName || 'Unknown Layer')}', '${escapeHtml(companyName || 'Unknown Company')}', ${layerId || 0})">${currentlySelected ? 'Unselect' : 'Select'}</button>` : ''}
+        
+        <!-- Show selected status for towers in Selected Towers layer -->
+        ${currentlySelected && layerId === -1 ? `<button class="select-btn" onclick="window.handleTowerPopupAction('toggle', '${escapeHtml(towerId)}', '${escapeHtml(layerName || 'Unknown Layer')}', '${escapeHtml(companyName || 'Unknown Company')}', ${layerId || 0})">Unselect</button>` : ''}
+        
+        <div class="popup-header">
+            ${layerName === 'Selected Towers' ? 'Selected ' : ''}FCC Tower Information
         </div>
+        
+        <table class='tower-table'>
+            <tr><td><b>Latitude</b></td><td>${safeValue(properties.lat)}</td></tr>
+            <tr><td><b>Longitude</b></td><td>${safeValue(properties.lon)}</td></tr>
+            <tr><td><b>County Name</b></td><td>${formatCountyDisplay()}</td></tr>
+            <tr><td><b>Overall Height Above Ground (Meters)</b></td><td>${safeValue(properties.overall_height_above_ground)}</td></tr>
+            <tr><td><b>Type</b></td><td>${formatTypeDisplay()}</td></tr>
+            <tr><td><b>Owner</b></td><td>${safeValue(properties.entity)}</td></tr>
+            ${companyName ? `<tr><td><b>Company</b></td><td>${companyName}</td></tr>` : ''}
+            ${layerName ? `<tr><td><b>Layer</b></td><td>${layerName}</td></tr>` : ''}
+        </table>
+    </div>
     `;
 
     return popupHTML;
@@ -350,6 +355,7 @@ export const getTowerCompanyFromLayerName = (layerName: string): string => {
 };
 
 // Create styled popup HTML for antenna buffers
+// Create styled popup HTML for antenna buffers
 export const createBufferPopupHTML = (
     properties: BufferProperties,
     distance: number,
@@ -362,68 +368,92 @@ export const createBufferPopupHTML = (
         return val.toString();
     };
 
-    const popupHTML = `
-        <style>
-        .buffer-popup-container {
-            font-family: Arial, sans-serif;
-            max-width: 350px;
-            position: relative;
-        }
-        
-        .buffer-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-family: Arial, sans-serif;
-            margin-top: 10px;
-        }
-        
-        .buffer-table td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
-        
-        .buffer-table td:first-child {
-            background-color: #f5f5f5;
-            font-weight: bold;
-            min-width: 120px;
-        }
-        
-        .buffer-table tr:hover {
-            background-color: #f9f9f9;
-        }
-        
-        .buffer-popup-header {
-            font-weight: bold;
-            font-size: 14px;
-            color: #333;
-            margin-bottom: 5px;
-        }
-        
-        .buffer-type {
-            background-color: #e3f2fd;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            margin-bottom: 8px;
-            text-align: center;
-            font-weight: bold;
-        }
-        </style>
+    // Create a unique ID for the buffer popup
+    const bufferId = `buffer_${properties.lat}_${properties.lon}_${distance}mi`;
 
-        <div class="buffer-popup-container">
-            <div class="buffer-popup-header">Coverage Area</div>
-            <div class="buffer-type">${distance} Mile ${companyName} Buffer</div>
-            <table class='buffer-table'>
-                <tr><td><b>Tower ID</b></td><td>${safeValue(properties.tower_id)}</td></tr>
-                <tr><td><b>Tower Name</b></td><td>${safeValue(properties.tower_name)}</td></tr>
-                <tr><td><b>Company</b></td><td>${companyName}</td></tr>
-                <tr><td><b>Buffer Distance</b></td><td>${distance} miles</td></tr>
-                <tr><td><b>Tower Height</b></td><td>${safeValue(properties.tower_height)} meters</td></tr>
-                <tr><td><b>Latitude</b></td><td>${safeValue(properties.lat)}</td></tr>
-                <tr><td><b>Longitude</b></td><td>${safeValue(properties.lon)}</td></tr>
-            </table>
+    const popupHTML = `
+    <style>
+    .popup-container {
+        font-family: Arial, sans-serif;
+        max-width: 400px;
+        position: relative;
+    }
+    
+    .copy-btn {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        padding: 4px 8px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: bold;
+        z-index: 1000;
+    }
+    
+    .copy-btn:hover {
+        background-color: #45a049;
+    }
+    
+    .buffer-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: Arial, sans-serif;
+        margin-top: 20px;
+    }
+    
+    .buffer-table th, .buffer-table td {
+        border: 1px solid #ddd;
+        padding: 10px;
+        text-align: left;
+        min-width: 120px;
+    }
+    
+    .buffer-table th {
+        background-color: #FF9800;
+        color: white;
+        font-weight: bold;
+    }
+    
+    .buffer-table tr:nth-child(even) {
+        background-color: #f2f2f2;
+    }
+    
+    .buffer-table tr:hover {
+        background-color: #ddd;
+    }
+    
+    .buffer-table td {
+        font-weight: normal;
+    }
+    
+    .popup-header {
+        font-weight: bold;
+        font-size: 14px;
+        color: #333;
+        margin-bottom: 5px;
+    }
+    </style>
+
+    <div class="popup-container">
+        <button class="copy-btn" onclick="window.handleTowerPopupAction('copy', '${bufferId}')">Copy</button>
+        
+        <div class="popup-header">
+            ${distance} Mile Buffer Zone - ${companyName}
         </div>
+        
+        <table class='buffer-table'>
+            <tr><td><b>Buffer Distance</b></td><td>${distance} miles</td></tr>
+            <tr><td><b>Center Latitude</b></td><td>${safeValue(properties.lat)}</td></tr>
+            <tr><td><b>Center Longitude</b></td><td>${safeValue(properties.lon)}</td></tr>
+            <tr><td><b>Company</b></td><td>${companyName}</td></tr>
+            <tr><td><b>Tower Height (Meters)</b></td><td>${safeValue(properties.overall_height_above_ground || properties.tower_height)}</td></tr>
+            <tr><td><b>Tower Owner</b></td><td>${safeValue(properties.entity || properties.tower_name)}</td></tr>
+        </table>
+    </div>
     `;
 
     return popupHTML;

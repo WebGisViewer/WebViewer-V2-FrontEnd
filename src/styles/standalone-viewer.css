@@ -384,4 +384,18 @@
 .cbrs-popup .leaflet-popup-tip {
     background: white;
 }
+/* Add to existing CSS or create new section */
+.selected-tower-icon {
+    background: none !important;
+    border: none !important;
+    z-index: 1000 !important;
+}
 
+.selected-tower-icon svg {
+    filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.4));
+}
+
+/* Ensure selected towers appear above other markers */
+.leaflet-marker-pane .selected-tower-icon {
+    z-index: 1000 !important;
+}
