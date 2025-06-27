@@ -396,6 +396,17 @@ const StandaloneViewerPage: React.FC = () => {
                     });
                 }
 
+                // Also reset buffer visibility for selected towers
+                setBufferVisibility(prevBuffers => {
+                    const updated: Record<string, boolean> = { ...prevBuffers };
+                    Object.keys(updated).forEach(id => {
+                        if (id.startsWith('buffer_-1_')) {
+                            updated[id] = false;
+                        }
+                    });
+                    return updated;
+                });
+
                 return newSet;
             }
         });
@@ -1059,11 +1070,14 @@ const StandaloneViewerPage: React.FC = () => {
                 }
 
                 // Register with zoom visibility manager
+                // Selected towers should ignore zoom restrictions
+                const customMinZoom = layerInfo.id === -1 ? 0 : undefined;
                 zoomVisibilityManager.registerLayer(
                     layerInfo.id,
                     layerInfo.name,
                     isTowerLayer,
-                    shouldBeVisible // FIX 3: Pass actual visibility state
+                    shouldBeVisible, // FIX 3: Pass actual visibility state
+                    customMinZoom
                 );
 
                 // Generate frontend buffer layers for antenna towers
