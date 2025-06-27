@@ -471,29 +471,6 @@ const StandaloneLayerControl: React.FC<StandaloneLayerControlProps> = ({
                             <SelectedTowersCount>
                                 {getSelectedTowersCount()} tower{getSelectedTowersCount() !== 1 ? 's' : ''} selected
                             </SelectedTowersCount>
-                            {selectedTowersLayer && (
-                                <FormControlLabel
-                                    control={
-                                        <Checkbox
-                                            checked={selectedTowersLayer.is_visible}
-                                            onChange={(e) => {
-                                                if (onSelectedTowersToggle) {
-                                                    onSelectedTowersToggle(e.target.checked);
-                                                }
-                                            }}
-                                            size="small"
-                                        />
-                                    }
-                                    label="Show on map"
-                                    sx={{
-                                        margin: '4px 0 0 0',
-                                        '& .MuiFormControlLabel-label': {
-                                            fontSize: '12px',
-                                            color: '#6c757d'
-                                        }
-                                    }}
-                                />
-                            )}
                         </SelectedTowersSection>
                     )}
 
