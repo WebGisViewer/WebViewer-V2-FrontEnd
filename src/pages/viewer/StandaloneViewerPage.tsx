@@ -233,6 +233,19 @@ const StandaloneViewerPage: React.FC = () => {
                     if (layerId === -1) {
                         // Immediately hide selected towers layer and its buffers
                         selectedTowersManager.toggleSelectedLayerVisibility(false);
+                        if (mapRef.current) {
+                            frontendBufferManager.removeBuffersForTower(-1, mapRef.current);
+                        }
+                        setBufferVisibility(prev => {
+                            const updated: Record<string, boolean> = { ...prev };
+                            Object.keys(updated).forEach(id => {
+                                if (id.startsWith('buffer_-1_')) {
+                                    updated[id] = false;
+                                }
+                            });
+                            return updated;
+                        });
+
                     }
 
                     // Also update buffer visibility state to reflect that buffers are off
@@ -1400,8 +1413,18 @@ const StandaloneViewerPage: React.FC = () => {
                                 });
                                 selectedTowersManager.toggleSelectedLayerVisibility(false);
                                 if (mapRef.current) {
-                                    frontendBufferManager.toggleParentLayerBuffers(-1, false, mapRef.current);
+                                    frontendBufferManager.removeBuffersForTower(-1, mapRef.current);
                                 }
+                                setBufferVisibility(prev => {
+                                    const updated: Record<string, boolean> = { ...prev };
+                                    Object.keys(updated).forEach(id => {
+                                        if (id.startsWith('buffer_-1_')) {
+                                            updated[id] = false;
+                                        }
+                                    });
+                                    return updated;
+                                });
+
                             }
                         }}
                     />
