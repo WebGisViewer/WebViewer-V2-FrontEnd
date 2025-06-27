@@ -245,6 +245,7 @@ const StandaloneViewerPage: React.FC = () => {
                             });
                             return updated;
                         });
+
                     }
 
                     // Also update buffer visibility state to reflect that buffers are off
@@ -1423,6 +1424,7 @@ const StandaloneViewerPage: React.FC = () => {
                                     });
                                     return updated;
                                 });
+
                             }
                         }}
                     />
