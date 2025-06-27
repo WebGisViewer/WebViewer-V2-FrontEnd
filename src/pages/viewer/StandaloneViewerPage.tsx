@@ -230,6 +230,23 @@ const StandaloneViewerPage: React.FC = () => {
                     // ✅ When tower layer is turned OFF, force hide and disable all buffers
                     frontendBufferManager.toggleParentLayerBuffers(layerId, false, mapRef.current);
 
+                    if (layerId === -1) {
+                        // Immediately hide selected towers layer and its buffers
+                        selectedTowersManager.toggleSelectedLayerVisibility(false);
+                        if (mapRef.current) {
+                            frontendBufferManager.removeBuffersForTower(-1, mapRef.current);
+                        }
+                        setBufferVisibility(prev => {
+                            const updated: Record<string, boolean> = { ...prev };
+                            Object.keys(updated).forEach(id => {
+                                if (id.startsWith('buffer_-1_')) {
+                                    updated[id] = false;
+                                }
+                            });
+                            return updated;
+                        });
+                    }
+
                     // Also update buffer visibility state to reflect that buffers are off
                     setBufferVisibility(prevBufferState => {
                         const newBufferState = { ...prevBufferState };
@@ -395,6 +412,17 @@ const StandaloneViewerPage: React.FC = () => {
                         }
                     });
                 }
+
+                // Also reset buffer visibility for selected towers
+                setBufferVisibility(prevBuffers => {
+                    const updated: Record<string, boolean> = { ...prevBuffers };
+                    Object.keys(updated).forEach(id => {
+                        if (id.startsWith('buffer_-1_')) {
+                            updated[id] = false;
+                        }
+                    });
+                    return updated;
+                });
 
                 return newSet;
             }
@@ -1059,11 +1087,14 @@ const StandaloneViewerPage: React.FC = () => {
                 }
 
                 // Register with zoom visibility manager
+                // Selected towers should ignore zoom restrictions
+                const customMinZoom = layerInfo.id === -1 ? 0 : undefined;
                 zoomVisibilityManager.registerLayer(
                     layerInfo.id,
                     layerInfo.name,
                     isTowerLayer,
-                    shouldBeVisible // FIX 3: Pass actual visibility state
+                    shouldBeVisible, // FIX 3: Pass actual visibility state
+                    customMinZoom
                 );
 
                 // Generate frontend buffer layers for antenna towers
@@ -1372,11 +1403,25 @@ const StandaloneViewerPage: React.FC = () => {
                         onSelectedTowersToggle={(isVisible) => {
                             if (isVisible) {
                                 setVisibleLayers(prev => new Set([...prev, -1]));
+                                selectedTowersManager.toggleSelectedLayerVisibility(true);
                             } else {
                                 setVisibleLayers(prev => {
                                     const newSet = new Set(prev);
                                     newSet.delete(-1);
                                     return newSet;
+                                });
+                                selectedTowersManager.toggleSelectedLayerVisibility(false);
+                                if (mapRef.current) {
+                                    frontendBufferManager.removeBuffersForTower(-1, mapRef.current);
+                                }
+                                setBufferVisibility(prev => {
+                                    const updated: Record<string, boolean> = { ...prev };
+                                    Object.keys(updated).forEach(id => {
+                                        if (id.startsWith('buffer_-1_')) {
+                                            updated[id] = false;
+                                        }
+                                    });
+                                    return updated;
                                 });
                             }
                         }}
