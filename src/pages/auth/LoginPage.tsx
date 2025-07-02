@@ -8,7 +8,8 @@ import { useAuth } from '../../context/AuthContext.tsx';
 const LoginPage: React.FC = () => {
     const { isAuthenticated, isLoading } = useAuth();
     const [searchParams] = useSearchParams();
-    const from = searchParams.get('redirect') || '/dashboard';
+    const from = searchParams.get('redirect');
+    console.log('Redirect parameter:', from);
     const theme = useTheme();
 
     if (isLoading) {
@@ -16,7 +17,9 @@ const LoginPage: React.FC = () => {
     }
 
     if (isAuthenticated) {
-        return <Navigate to={from} replace />;
+        // If no redirect URL or invalid URL, go to dashboard
+        const redirectTo = from && from !== 'null' ? decodeURIComponent(from) : '/dashboard';
+        return <Navigate to={redirectTo} replace />;
     }
 
     return (

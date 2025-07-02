@@ -1,42 +1,65 @@
+
 // src/components/auth/ProtectedRoute.tsx
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import LoadingScreen from '../common/LoadingScreen';
+import { Box, CircularProgress, Typography } from '@mui/material';
 
 interface ProtectedRouteProps {
     component: React.ComponentType<any>;
     adminOnly?: boolean;
+    [key: string]: any;
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
                                                            component: Component,
                                                            adminOnly = false,
-                                                           ...rest
+                                                           ...props
                                                        }) => {
     const { isAuthenticated, isLoading, user } = useAuth();
     const location = useLocation();
 
+    // Show loading while checking authentication
     if (isLoading) {
-        return <LoadingScreen />;
-    }
-
-    if (!isAuthenticated) {
-        // Redirect to login if not authenticated
-        const redirectParam =
-            encodeURIComponent(location.pathname + location.search);
         return (
-            <Navigate to={`/login?redirect=${redirectParam}`} replace />
+            <Box
+                display="flex"
+                flexDirection="column"
+                justifyContent="center"
+                alignItems="center"
+                height="100vh"
+                gap={2}
+            >
+                <CircularProgress />
+                <Typography variant="body1">Loading...</Typography>
+            </Box>
         );
     }
 
-    if (adminOnly && !user?.is_admin) {
-        // Redirect to dashboard if the route requires admin but user isn't an admin
-        return <Navigate to="/dashboard" replace />;
+    // Redirect to login if not authenticated, preserving the current location
+    if (!isAuthenticated) {
+        const redirectUrl = encodeURIComponent(location.pathname + location.search);
+        return <Navigate to={`/login?redirect=${redirectUrl}`} replace />;
     }
 
-    // If authenticated (and admin if required), render the protected component
-    return <Component {...rest} />;
+    // Check admin access if required
+    if (adminOnly && user && !user.is_staff) {
+        return (
+            <Box
+                display="flex"
+                justifyContent="center"
+                alignItems="center"
+                height="100vh"
+            >
+                <Typography variant="h6" color="error">
+                    Access denied. Admin privileges required.
+                </Typography>
+            </Box>
+        );
+    }
+
+    // Render the component
+    return <Component {...props} />;
 };
 
 export default ProtectedRoute;

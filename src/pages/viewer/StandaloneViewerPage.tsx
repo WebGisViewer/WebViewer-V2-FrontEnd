@@ -31,6 +31,7 @@ import { layerDataCache } from '../../utils/LayerDataCache';
 import { selectedTowersManager, SelectedTower } from '../../components/viewer/SelectedTowersManager';
 import { towerCompanyColors } from '../../constants/towerConstants';
 import { initializeTowerPopupHandler } from '../../components/viewer/EnhancedTowerPopupSystem';
+import { useAuth } from '../../context/AuthContext';
 
 
 // Fix Leaflet default icon issue
@@ -157,7 +158,9 @@ const createTowerIcon = (companyName: string): L.DivIcon => {
 
 
 const StandaloneViewerPage: React.FC = () => {
+    const { isAuthenticated, isLoading: authLoading } = useAuth();
     const { id } = useParams<{ id: string }>();
+
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
     const layersRef = useRef<{ [id: number]: L.Layer }>({});
@@ -189,6 +192,14 @@ const StandaloneViewerPage: React.FC = () => {
     const [fallbackLayerData, setFallbackLayerData] = useState<{ [layerId: number]: any }>({});
 
     const [selectedTowers, setSelectedTowers] = useState<SelectedTower[]>([]);
+
+    if (authLoading) {
+        return <StandaloneLoadingScreen progress={0} statusMessage="Authenticating..." />;
+    }
+
+    if (!isAuthenticated) {
+        return <StandaloneLoadingScreen progress={0} statusMessage="Authentication required..." />;
+    }
 
     // ✅ MOVE getLayerNameById outside of useEffect and make it a useCallback
     const getLayerNameById = useCallback((layerId: number): string => {

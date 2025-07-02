@@ -1,3 +1,4 @@
+
 // src/components/auth/LoginForm.tsx
 import React, { useState } from 'react';
 import {
@@ -30,7 +31,7 @@ const FormContainer = styled(Paper)(({ theme }) => ({
 }));
 
 interface LoginFormProps {
-    redirectTo: string;
+    redirectTo: string | null;
 }
 
 const LoginForm: React.FC<LoginFormProps> = ({ redirectTo }) => {
@@ -46,7 +47,20 @@ const LoginForm: React.FC<LoginFormProps> = ({ redirectTo }) => {
         clearError();
         try {
             await login({ username, password });
-            navigate(redirectTo, { replace: true });
+
+            // Determine where to redirect
+            let destination = '/dashboard'; // default
+
+            if (redirectTo && redirectTo !== 'null') {
+                try {
+                    destination = decodeURIComponent(redirectTo);
+                } catch (e) {
+                    console.warn('Failed to decode redirect URL:', redirectTo);
+                    destination = '/dashboard';
+                }
+            }
+
+            navigate(destination, { replace: true });
         } catch (err) {
             console.error('Login failed:', err);
         }
