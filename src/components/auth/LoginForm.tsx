@@ -29,7 +29,11 @@ const FormContainer = styled(Paper)(({ theme }) => ({
     boxShadow: theme.shadows[3],
 }));
 
-const LoginForm: React.FC = () => {
+interface LoginFormProps {
+    redirectTo: string;
+}
+
+const LoginForm: React.FC<LoginFormProps> = ({ redirectTo }) => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -42,7 +46,7 @@ const LoginForm: React.FC = () => {
         clearError();
         try {
             await login({ username, password });
-            navigate('/dashboard');
+            navigate(redirectTo, { replace: true });
         } catch (err) {
             console.error('Login failed:', err);
         }

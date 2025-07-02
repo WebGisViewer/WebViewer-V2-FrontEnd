@@ -2,11 +2,13 @@
 import React from 'react';
 import { Box, Container, Typography, useTheme } from '@mui/material';
 import LoginForm from '../../components/auth/LoginForm.tsx';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.tsx';
 
 const LoginPage: React.FC = () => {
     const { isAuthenticated, isLoading } = useAuth();
+    const [searchParams] = useSearchParams();
+    const from = searchParams.get('redirect') || '/dashboard';
     const theme = useTheme();
 
     if (isLoading) {
@@ -14,7 +16,7 @@ const LoginPage: React.FC = () => {
     }
 
     if (isAuthenticated) {
-        return <Navigate to="/dashboard" replace />;
+        return <Navigate to={from} replace />;
     }
 
     return (
@@ -46,7 +48,7 @@ const LoginPage: React.FC = () => {
                     </Typography>
                 </Box>
 
-                <LoginForm />
+                <LoginForm redirectTo={from} />
             </Container>
         </Box>
     );
