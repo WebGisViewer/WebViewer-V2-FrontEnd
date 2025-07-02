@@ -300,39 +300,34 @@ const StandaloneViewerPage: React.FC = () => {
         };
     };
 
-    // Add this function to create selected towers GeoJSON data
-    const createSelectedTowersData = (selectedTowers: SelectedTower[]) => {
-        return {
-            type: 'FeatureCollection' as const,
-            features: selectedTowers.map(tower => ({
-                type: 'Feature' as const,
-                geometry: {
-                    type: 'Point' as const,
-                    coordinates: [tower.coordinates[1], tower.coordinates[0]] // [lng, lat]
-                },
-                properties: tower.data
-            }))
-        };
-    };
+// Add this function to create white tiles on demand
 
-    // Inject tower icon CSS
-    useEffect(() => {
-        const style = document.createElement('style');
-        style.textContent = `
-            .custom-tower-icon {
-                background: none !important;
-                border: none !important;
+// Replace the createWhiteTileLayer function with this corrected version
+const createWhiteTileLayer = (): L.TileLayer => {
+    // Create a custom tile layer that always returns white tiles
+    const WhiteTileLayer = L.TileLayer.extend({
+        createTile: function(coords: any, done: any) {
+            const tile = document.createElement('canvas');
+            tile.width = 256;
+            tile.height = 256;
+            const ctx = tile.getContext('2d');
+            
+            if (ctx) {
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, 256, 256);
             }
-            .custom-tower-icon svg {
-                filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.3));
-            }
-        `;
-        document.head.appendChild(style);
-
-        return () => {
-            document.head.removeChild(style);
-        };
-    }, []);
+            
+            setTimeout(() => done(null, tile), 0);
+            return tile;
+        }
+    });
+    
+    return new (WhiteTileLayer as any)('', {
+        attribution: 'White Background',
+        minZoom: 1,
+        maxZoom: 18
+    });
+};
 
     // Subscribe to buffer manager changes
     useEffect(() => {
@@ -627,6 +622,16 @@ const StandaloneViewerPage: React.FC = () => {
         };
     }, [id]);
 
+    useEffect(() => {
+        // Add class to body when component mounts
+        document.body.classList.add('standalone-viewer-active');
+
+        // Cleanup function to remove class when component unmounts
+        return () => {
+            document.body.classList.remove('standalone-viewer-active');
+        };
+    }, []);
+
     // Initialize map
     useEffect(() => {
         if (!projectData || !mapContainerRef.current || loading) return;
@@ -705,10 +710,11 @@ const StandaloneViewerPage: React.FC = () => {
     }, [projectData, loading]);
 
 
-    // Handle basemap changes
+// Modify the basemap handling useEffect
     useEffect(() => {
-        if (!mapRef.current || !projectData || loading || !activeBasemap) return;
+        if (!mapRef.current || !projectData || loading) return;
 
+        // Clear existing basemaps
         Object.values(basemapLayersRef.current).forEach(layer => {
             if (mapRef.current!.hasLayer(layer)) {
                 mapRef.current!.removeLayer(layer);
@@ -718,15 +724,25 @@ const StandaloneViewerPage: React.FC = () => {
 
         const basemap = projectData.basemaps?.find((b: any) => b.id === activeBasemap);
         if (basemap) {
-            const tileLayer = L.tileLayer(basemap.url_template, {
-                ...basemap.options,
-                attribution: basemap.attribution,
-                pane: 'basemapPane'
-            });
+            let tileLayer: L.TileLayer;
+
+            // Check if this is the white background basemap (ID 1 in your case)
+            if (basemap.id === 1) {
+                // Use custom white tile layer instead of URL
+                tileLayer = createWhiteTileLayer();
+            } else {
+                // Regular tile layer for other basemaps
+                tileLayer = L.tileLayer(basemap.url_template, {
+                    ...basemap.options,
+                    attribution: basemap.attribution,
+                    pane: 'basemapPane'
+                });
+            }
 
             tileLayer.addTo(mapRef.current);
             basemapLayersRef.current[basemap.id] = tileLayer;
 
+            // Ensure proper z-index
             mapRef.current.getPane('basemapPane')!.style.zIndex = '200';
             mapRef.current.getPane('overlayPane')!.style.zIndex = '400';
             mapRef.current.getPane('markerPane')!.style.zIndex = '600';
@@ -1366,7 +1382,10 @@ const StandaloneViewerPage: React.FC = () => {
                     ref={mapContainerRef}
                     width="100%"
                     height="100%"
-                    sx={{ position: 'absolute', top: 0, left: 0 }}
+                    sx={{ position: 'absolute', top: 0, left: 0, backgroundColor: 'white', '& .leaflet-container': {
+                            backgroundColor: '#ffffff !important'
+                        }
+                    }}
                 />
 
                 {/* Zoom hints notification */}
