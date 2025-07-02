@@ -23,7 +23,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
     if (!isAuthenticated) {
         // Redirect to login if not authenticated
-        return <Navigate to="/login" state={{ from: location }} replace />;
+        const redirectParam =
+            encodeURIComponent(location.pathname + location.search);
+        return (
+            <Navigate to={`/login?redirect=${redirectParam}`} replace />
+        );
     }
 
     if (adminOnly && !user?.is_admin) {
